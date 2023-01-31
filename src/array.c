@@ -497,17 +497,27 @@ JL_DLLEXPORT jl_value_t *jl_alloc_string(size_t len)
     jl_ptls_t ptls = ct->ptls;
     const size_t allocsz = sz + sizeof(jl_taggedvalue_t);
     if (sz <= GC_MAX_SZCLASS) {
+#ifndef MMTKHEAP
         int pool_id = jl_gc_szclass_align8(allocsz);
         jl_gc_pool_t *p = &ptls->heap.norm_pools[pool_id];
         int osize = jl_gc_sizeclasses[pool_id];
         // We call `jl_gc_pool_alloc_noinline` instead of `jl_gc_pool_alloc` to avoid double-counting in
         // the Allocations Profiler. (See https://github.com/JuliaLang/julia/pull/43868 for more details.)
         s = jl_gc_pool_alloc_noinline(ptls, (char*)p - (char*)ptls, osize);
+#else
+        int pool_id = jl_gc_szclass_align8(allocsz);
+        int osize = jl_gc_sizeclasses[pool_id];
+        s = jl_mmtk_gc_alloc_default(ptls, pool_id, osize, jl_string_type);
+#endif
     }
     else {
         if (allocsz < sz) // overflow in adding offs, size was "negative"
             jl_throw(jl_memory_exception);
+#ifndef MMTKHEAP
         s = jl_gc_big_alloc_noinline(ptls, allocsz);
+#else
+        s = jl_mmtk_gc_alloc_big(ptls, allocsz);
+#endif
     }
     jl_set_typeof(s, jl_string_type);
     maybe_record_alloc_to_profile(s, len, jl_string_type);

@@ -347,6 +347,10 @@ jl_ptls_t jl_init_threadtls(int16_t tid)
     ptls->rngseed = jl_rand();
     if (tid == 0)
         ptls->disable_gc = 1;
+#ifdef MMTKHEAP
+    if (tid == 0)
+        disable_collection();
+#endif
 #ifdef _OS_WINDOWS_
     if (tid == 0) {
         if (!DuplicateHandle(GetCurrentProcess(), GetCurrentThread(),
