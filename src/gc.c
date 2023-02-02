@@ -3389,8 +3389,6 @@ void jl_gc_init(void)
 
 #endif
 
-    jl_gc_mark_sp_t sp = {NULL, NULL, NULL, NULL};
-    gc_mark_loop(NULL, sp);
     t_start = jl_hrtime();
 }
 
