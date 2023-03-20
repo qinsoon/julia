@@ -332,6 +332,8 @@ jl_value_t *jl_gc_big_alloc_noinline(jl_ptls_t ptls, size_t allocsz);
 #ifdef MMTKHEAP
 JL_DLLEXPORT jl_value_t *jl_mmtk_gc_alloc_default(jl_ptls_t ptls, int pool_offset, int osize, void* ty);
 JL_DLLEXPORT jl_value_t *jl_mmtk_gc_alloc_big(jl_ptls_t ptls, size_t allocsz);
+extern void post_alloc(void* mutator, void* obj, size_t bytes, int allocator);
+extern void mmtk_memory_region_copy(void* mutator, void* src_obj, void* src_addr, void* dst_obj, void* dst_addr, ssize_t count);
 #endif
 JL_DLLEXPORT int jl_gc_classify_pools(size_t sz, int *osize) JL_NOTSAFEPOINT;
 extern uv_mutex_t gc_perm_lock;
@@ -521,6 +523,12 @@ STATIC_INLINE jl_value_t *jl_gc_permobj(size_t sz, void *ty) JL_NOTSAFEPOINT
                                                               sizeof(void*) % align);
     uintptr_t tag = (uintptr_t)ty;
     o->header = tag | GC_OLD_MARKED;
+
+#ifdef MMTKHEAP
+    jl_ptls_t ptls = jl_current_task->ptls;
+    post_alloc(ptls->mmtk_mutator_ptr, jl_valueof(o), allocsz, 1);
+#endif
+
     return jl_valueof(o);
 }
 jl_value_t *jl_permbox8(jl_datatype_t *t, int8_t x);
@@ -578,9 +586,7 @@ void gc_setmark_buf(jl_ptls_t ptls, void *buf, uint8_t, size_t) JL_NOTSAFEPOINT;
 
 STATIC_INLINE void jl_gc_wb_binding(jl_binding_t *bnd, void *val) JL_NOTSAFEPOINT // val isa jl_value_t*
 {
-#ifndef MMTKHEAP
     jl_gc_wb(bnd, val);
-#endif
 }
 
 STATIC_INLINE void jl_gc_wb_buf(void *parent, void *bufptr, size_t minsz) JL_NOTSAFEPOINT // parent isa jl_value_t*
@@ -591,6 +597,8 @@ STATIC_INLINE void jl_gc_wb_buf(void *parent, void *bufptr, size_t minsz) JL_NOT
         jl_task_t *ct = jl_current_task;
         gc_setmark_buf(ct->ptls, bufptr, 3, minsz);
     }
+#else
+    jl_gc_wb_back(parent);
 #endif
 }
 

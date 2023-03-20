@@ -1753,6 +1753,11 @@ JL_DLLEXPORT void jl_gc_queue_root(const jl_value_t *ptr)
     o->bits.gc = GC_MARKED;
     arraylist_push(ptls->heap.remset, (jl_value_t*)ptr);
     ptls->heap.remset_nptr++; // conservative
+#else
+    printf("jl_gc_queue_root is called with %p!!!\n", ptr);
+    // Just segfault here
+    int* nullptr = (int*)0;
+    *nullptr = 42;
 #endif
 }
 
@@ -3740,6 +3745,7 @@ void *jl_gc_perm_alloc_nolock(size_t sz, int zero, unsigned align, unsigned offs
 // **NOT** a safepoint
 void *jl_gc_perm_alloc(size_t sz, int zero, unsigned align, unsigned offset)
 {
+#ifndef MMTKHEAP
     assert(align < GC_PERM_POOL_LIMIT);
 #ifndef MEMDEBUG
     if (__unlikely(sz > GC_PERM_POOL_LIMIT))
@@ -3749,6 +3755,28 @@ void *jl_gc_perm_alloc(size_t sz, int zero, unsigned align, unsigned offset)
     void *p = jl_gc_perm_alloc_nolock(sz, zero, align, offset);
     uv_mutex_unlock(&gc_perm_lock);
     return p;
+#else
+    jl_ptls_t ptls = jl_current_task->ptls;
+
+    // // We try allocate in the same way as other julia objects. So we leave some room for a header as well;
+    // size_t alloc_sz = sz + 8;
+    // // It seems Julia does not use offset for perm alloc. So we just need to add offset for the header
+    // assert(offset == 0);
+    // unsigned alloc_offset = 8;
+    // // Use immortal
+    // int allocator = 1;
+    // // Alloc
+    // jl_taggedvalue_t *v_tagged = alloc(ptls->mmtk_mutator_ptr, alloc_sz, align, alloc_offset, allocator);
+    // jl_value_t *v = jl_valueof(v_tagged);
+    // printf("post_alloc on %p\n", v);fflush(stdout);
+    // post_alloc(ptls->mmtk_mutator_ptr, v, alloc_sz, allocator);
+
+    // return (void*) v;
+
+    void* addr = alloc(ptls->mmtk_mutator_ptr, sz, align, offset, 1);
+    // post_alloc(ptls->mmtk_mutator_ptr, addr, sz, 1);
+    return addr;
+#endif
 }
 
 JL_DLLEXPORT void jl_gc_add_finalizer(jl_value_t *v, jl_function_t *f)
