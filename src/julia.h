@@ -932,7 +932,6 @@ JL_DLLEXPORT void jl_gc_queue_multiroot(const jl_value_t *root, const jl_value_t
 
 #ifdef MMTKHEAP
 STATIC_INLINE void mmtk_gc_wb(const void *parent, const void *ptr) JL_NOTSAFEPOINT;
-STATIC_INLINE void mmtk_gc_wb_stack_push(const void *ptr) JL_NOTSAFEPOINT;
 #endif
 
 STATIC_INLINE void jl_gc_wb(const void *parent, const void *ptr) JL_NOTSAFEPOINT
@@ -971,13 +970,6 @@ STATIC_INLINE void jl_gc_multi_wb(const void *parent, const jl_value_t *ptr) JL_
     const jl_datatype_layout_t *ly = dt->layout;
     if (ly->npointers)
         jl_gc_queue_multiroot((jl_value_t*)parent, ptr);
-#endif
-}
-
-STATIC_INLINE void jl_gc_wb_stack_push(const void* ptr) JL_NOTSAFEPOINT
-{
-#ifdef MMTKHEAP
-    mmtk_gc_wb_stack_push(ptr);
 #endif
 }
 
@@ -2281,10 +2273,6 @@ STATIC_INLINE void mmtk_gc_wb(const void *parent, const void *ptr) JL_NOTSAFEPOI
     jl_task_t *ct = jl_current_task;
     jl_ptls_t ptls = ct->ptls;
     mmtk_object_reference_write_post(ptls->mmtk_mutator_ptr, parent, ptr);
-}
-STATIC_INLINE void mmtk_gc_wb_stack_push(const void* ptr) JL_NOTSAFEPOINT
-{
-    mmtk_gc_wb(jl_current_task, ptr);
 }
 #endif
 
