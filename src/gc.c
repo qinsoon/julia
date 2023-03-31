@@ -1761,6 +1761,16 @@ JL_DLLEXPORT void jl_gc_queue_root(const jl_value_t *ptr)
 #endif
 }
 
+JL_DLLEXPORT void jl_gc_wb1_noinline(const void *parent) JL_NOTSAFEPOINT
+{
+    jl_gc_wb_back(parent);
+}
+
+JL_DLLEXPORT void jl_gc_wb2_noinline(const void *parent, const void *ptr) JL_NOTSAFEPOINT
+{
+    jl_gc_wb(parent, ptr);
+}
+
 void jl_gc_queue_multiroot(const jl_value_t *parent, const jl_value_t *ptr) JL_NOTSAFEPOINT
 {
     // first check if this is really necessary

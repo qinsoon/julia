@@ -934,6 +934,9 @@ JL_DLLEXPORT void jl_gc_queue_multiroot(const jl_value_t *root, const jl_value_t
 STATIC_INLINE void mmtk_gc_wb(const void *parent, const void *ptr) JL_NOTSAFEPOINT;
 #endif
 
+JL_DLLEXPORT void jl_gc_wb1_noinline(const void *parent) JL_NOTSAFEPOINT;
+JL_DLLEXPORT void jl_gc_wb2_noinline(const void *parent, const void *ptr) JL_NOTSAFEPOINT;
+
 STATIC_INLINE void jl_gc_wb(const void *parent, const void *ptr) JL_NOTSAFEPOINT
 {
 #ifndef MMTKHEAP

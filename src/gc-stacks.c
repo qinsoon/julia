@@ -178,6 +178,7 @@ JL_DLLEXPORT void *jl_malloc_stack(size_t *bufsz, jl_task_t *owner) JL_NOTSAFEPO
         arraylist_t *live_tasks = &ptls->heap.live_tasks;
         arraylist_push(live_tasks, owner);
     }
+    printf("jl_malloc_stack: current thread = %p, owner = %p, new stack = %p\n", ptls, owner, stk); fflush(stdout);
     return stk;
 }
 

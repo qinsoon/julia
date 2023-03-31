@@ -52,6 +52,12 @@ declare void @llvm.lifetime.end.p0i8(i64 immarg, i8* nocapture) #2
 ; Function Attrs: inaccessiblemem_or_argmemonly
 declare void @ijl_gc_queue_root({} addrspace(10)*) #3
 
+; Function Attrs: inaccessiblemem_or_argmemonly
+declare void @ijl_gc_wb1_noinline({} addrspace(10)*) #3
+
+; Function Attrs: inaccessiblemem_or_argmemonly
+declare void @ijl_gc_wb1_noinline({} addrspace(10)*, {} addrspace(10)*) #3
+
 ; Function Attrs: allocsize(1)
 declare noalias nonnull {} addrspace(10)* @ijl_gc_pool_alloc(i8*, i32, i32) #1
 

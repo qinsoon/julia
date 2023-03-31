@@ -2512,29 +2512,46 @@ bool LateLowerGCFrame::CleanupIR(Function &F, State *S, bool *CFGModified) {
         }
         IRBuilder<> builder(CI);
         builder.SetCurrentDebugLocation(CI->getDebugLoc());
-        auto parBits = builder.CreateAnd(EmitLoadTag(builder, parent), 3);
-        auto parOldMarked = builder.CreateICmpEQ(parBits, ConstantInt::get(T_size, 3));
-        auto mayTrigTerm = SplitBlockAndInsertIfThen(parOldMarked, CI, false);
-        builder.SetInsertPoint(mayTrigTerm);
-        Value *anyChldNotMarked = NULL;
-        for (unsigned i = 1; i < CI->arg_size(); i++) {
-            Value *child = CI->getArgOperand(i);
-            Value *chldBit = builder.CreateAnd(EmitLoadTag(builder, child), 1);
-            Value *chldNotMarked = builder.CreateICmpEQ(chldBit, ConstantInt::get(T_size, 0));
-            anyChldNotMarked = anyChldNotMarked ? builder.CreateOr(anyChldNotMarked, chldNotMarked) : chldNotMarked;
+        const bool INLINE_WRITE_BARRIER = false;
+
+        if (INLINE_WRITE_BARRIER) {
+            auto parBits = builder.CreateAnd(EmitLoadTag(builder, parent), 3);
+            auto parOldMarked = builder.CreateICmpEQ(parBits, ConstantInt::get(T_size, 3));
+            auto mayTrigTerm = SplitBlockAndInsertIfThen(parOldMarked, CI, false);
+            builder.SetInsertPoint(mayTrigTerm);
+            Value *anyChldNotMarked = NULL;
+            for (unsigned i = 1; i < CI->arg_size(); i++) {
+                Value *child = CI->getArgOperand(i);
+                Value *chldBit = builder.CreateAnd(EmitLoadTag(builder, child), 1);
+                Value *chldNotMarked = builder.CreateICmpEQ(chldBit, ConstantInt::get(T_size, 0));
+                anyChldNotMarked = anyChldNotMarked ? builder.CreateOr(anyChldNotMarked, chldNotMarked) : chldNotMarked;
+            }
+            assert(anyChldNotMarked); // handled by all_of test above
+            MDBuilder MDB(parent->getContext());
+            SmallVector<uint32_t, 2> Weights{1, 9};
+            auto trigTerm = SplitBlockAndInsertIfThen(anyChldNotMarked, mayTrigTerm, false,
+                                                    MDB.createBranchWeights(Weights));
+            builder.SetInsertPoint(trigTerm);
+            if (CI->getCalledOperand() == write_barrier_func) {
+                builder.CreateCall(getOrDeclare(jl_intrinsics::queueGCRoot), parent);
+            }
+            else {
+                assert(false);
+            }
+        } else {
+            if (CI->getCalledOperand() == write_barrier_func) {
+                if (CI->arg_size() == 2) {
+                    // parent, target
+                    Function *wb_func = getOrDeclare(jl_intrinsics::writeBarrier2);
+                    builder.CreateCall(wb_func, { parent, CI->getArgOperand(1) });
+                } else {
+                    // parent and many targets
+                    Function *wb_func = getOrDeclare(jl_intrinsics::writeBarrier1);
+                    builder.CreateCall(wb_func, { parent });
+                }
+            }
         }
-        assert(anyChldNotMarked); // handled by all_of test above
-        MDBuilder MDB(parent->getContext());
-        SmallVector<uint32_t, 2> Weights{1, 9};
-        auto trigTerm = SplitBlockAndInsertIfThen(anyChldNotMarked, mayTrigTerm, false,
-                                                  MDB.createBranchWeights(Weights));
-        builder.SetInsertPoint(trigTerm);
-        if (CI->getCalledOperand() == write_barrier_func) {
-            builder.CreateCall(getOrDeclare(jl_intrinsics::queueGCRoot), parent);
-        }
-        else {
-            assert(false);
-        }
+
         CI->eraseFromParent();
     }
     if (maxframeargs == 0 && Frame) {
