@@ -3723,6 +3723,13 @@ STATIC_INLINE void *gc_try_perm_alloc_pool(size_t sz, unsigned align, unsigned o
 // **NOT** a safepoint
 void *jl_gc_perm_alloc_nolock(size_t sz, int zero, unsigned align, unsigned offset)
 {
+#ifdef MMTKHEAP
+    jl_ptls_t ptls = jl_current_task->ptls;
+    void* addr = alloc(ptls->mmtk_mutator_ptr, sz, align, offset, 1);
+    // printf("jl_gc_perm_alloc_nolock: %p, %p\n", addr, ((char*)addr) + sz); fflush(stdout);
+    return addr;
+#endif
+
     // The caller should have acquired `gc_perm_lock`
     assert(align < GC_PERM_POOL_LIMIT);
 #ifndef MEMDEBUG
@@ -3785,6 +3792,7 @@ void *jl_gc_perm_alloc(size_t sz, int zero, unsigned align, unsigned offset)
 
     void* addr = alloc(ptls->mmtk_mutator_ptr, sz, align, offset, 1);
     // post_alloc(ptls->mmtk_mutator_ptr, addr, sz, 1);
+    // printf("jl_gc_perm_alloc: %p, %p\n", addr, ((char*)addr) + sz); fflush(stdout);
     return addr;
 #endif
 }

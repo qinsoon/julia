@@ -720,6 +720,7 @@ void jl_dump_native_impl(void *native_code,
     data->M = orc::ThreadSafeModule(); // free memory for data->M
 
     if (sysimg_data) {
+        printf("aot dump: sysimg_data = %p\n", sysimg_data); fflush(stdout);
         Constant *data = ConstantDataArray::get(Context,
             ArrayRef<uint8_t>((const unsigned char*)sysimg_data, sysimg_len));
         addComdat(new GlobalVariable(*sysimageM, data->getType(), false,

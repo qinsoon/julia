@@ -489,6 +489,10 @@ static void jl_load_sysimg_so(void)
     jl_dlsym(jl_sysimg_handle, "jl_system_image_data", (void **)&sysimg_data, 1);
     size_t *plen;
     jl_dlsym(jl_sysimg_handle, "jl_system_image_size", (void **)&plen, 1);
+#ifdef MMTKHEAP
+    printf("load sysimg so: start = %p, size = %ld\n", sysimg_data, *plen); fflush(stdout);
+    mmtk_set_vm_space(sysimg_data, *plen);
+#endif
     jl_restore_system_image_data(sysimg_data, *plen);
 }
 
@@ -2702,6 +2706,7 @@ static void jl_restore_system_image_from_stream_(ios_t *f, jl_image_t *image, jl
     // step 1: read section map
     assert(ios_pos(f) == 0 && f->bm == bm_mem);
     size_t sizeof_sysimg = read_uint(f);
+    printf("ios_static_buffer: f->buf = %p\n", f->buf);
     ios_static_buffer(&sysimg, f->buf, sizeof_sysimg + sizeof(uintptr_t));
     ios_skip(f, sizeof_sysimg);
 
@@ -2811,6 +2816,11 @@ static void jl_restore_system_image_from_stream_(ios_t *f, jl_image_t *image, jl
     ios_close(&symbols);
 
     char *image_base = (char*)&sysimg.buf[0];
+    // printf("sysimg = %p\n", &sysimg); fflush(stdout);
+    // printf("sysimg.buf = %p\n", sysimg.buf); fflush(stdout);
+    // printf("(char*)sysimg.buf = %p\n", (char*)sysimg.buf); fflush(stdout);
+    // printf("&sysimg.buf[0] = %p\n", &sysimg.buf[0]); fflush(stdout);
+    // printf("image_base = %p\n", image_base); fflush(stdout);
     reloc_t *relocs_base = (reloc_t*)&relocs.buf[0];
     if (base)
         *base = image_base;
@@ -3042,6 +3052,7 @@ static void jl_restore_system_image_from_stream_(ios_t *f, jl_image_t *image, jl
     for (size_t i = 0; i < s.fixup_objs.len; i++) {
         uintptr_t item = (uintptr_t)s.fixup_objs.items[i];
         jl_value_t *obj = (jl_value_t*)(image_base + item);
+        // printf("obj = %p (image_base = %p, item = %ld)\n", obj, image_base, item);
         if (jl_typeis(obj, jl_typemap_entry_type)) {
             jl_typemap_entry_t *entry = (jl_typemap_entry_t*)obj;
             entry->min_world = world;
@@ -3095,7 +3106,9 @@ static void jl_restore_system_image_from_stream_(ios_t *f, jl_image_t *image, jl
             //assert(((jl_datatype_t*)(jl_typeof(obj)))->name == jl_idtable_typename);
             jl_array_t **a = (jl_array_t**)obj;
             assert(jl_typeis(*a, jl_array_any_type));
+            // printf("before jl_idtable_rehash: *a = %p\n", *a);
             *a = jl_idtable_rehash(*a, jl_array_len(*a));
+            // printf("jl_gc_wb(obj = %p, *a = %p)\n", obj, *a); fflush(stdout);
             jl_gc_wb(obj, *a);
         }
     }
@@ -3235,6 +3248,10 @@ static jl_value_t *jl_restore_package_image_from_stream(ios_t *f, jl_image_t *im
         JL_SIGATOMIC_BEGIN();
         size_t len = dataendpos - datastartpos;
         char *sysimg = (char*)jl_gc_perm_alloc(len, 0, 64, 0);
+#ifdef MMTKHEAP
+        mmtk_immortal_region_post_alloc(sysimg, len);
+#endif
+        printf("allocated package image: %p\n", sysimg); fflush(stdout);
         ios_seek(f, datastartpos);
         if (ios_readall(f, sysimg, len) != len || jl_crc32c(0, sysimg, len) != (uint32_t)checksum) {
             restored = jl_get_exceptionf(jl_errorexception_type, "Error reading system image file.");
@@ -3320,6 +3337,7 @@ JL_DLLEXPORT void jl_restore_system_image(const char *fname)
 
     if (jl_sysimg_handle) {
         // load the pre-compiled sysimage from jl_sysimg_handle
+        printf("jl_sysimg_handle is true, jl_load_sysimg_so()\n"); fflush(stdout);
         jl_load_sysimg_so();
     }
     else {
@@ -3331,6 +3349,10 @@ JL_DLLEXPORT void jl_restore_system_image(const char *fname)
         ios_seek_end(&f);
         size_t len = ios_pos(&f);
         char *sysimg = (char*)jl_gc_perm_alloc(len, 0, 64, 0);
+#ifdef MMTKHEAP
+        mmtk_immortal_region_post_alloc(sysimg, len);
+#endif
+        printf("allocated sys image: %p\n", sysimg); fflush(stdout);
         ios_seek(&f, 0);
         if (ios_readall(&f, sysimg, len) != len)
             jl_errorf("Error reading system image file.");

@@ -2540,15 +2540,18 @@ bool LateLowerGCFrame::CleanupIR(Function &F, State *S, bool *CFGModified) {
             }
         } else {
             if (CI->getCalledOperand() == write_barrier_func) {
-                if (CI->arg_size() == 2) {
-                    // parent, target
-                    Function *wb_func = getOrDeclare(jl_intrinsics::writeBarrier2);
-                    builder.CreateCall(wb_func, { parent, CI->getArgOperand(1) });
-                } else {
-                    // parent and many targets
-                    Function *wb_func = getOrDeclare(jl_intrinsics::writeBarrier1);
-                    builder.CreateCall(wb_func, { parent });
-                }
+                // if (CI->arg_size() == 2) {
+                //     // parent, target
+                //     Function *wb_func = getOrDeclare(jl_intrinsics::writeBarrier2);
+                //     builder.CreateCall(wb_func, { parent, CI->getArgOperand(1) }); // We need to be careful about arg1, which may not match the type for wb_func. We probably need a bitcast
+                // } else {
+                //     // parent and many targets
+                //     Function *wb_func = getOrDeclare(jl_intrinsics::writeBarrier1);
+                //     builder.CreateCall(wb_func, { parent });
+                // }
+                // We only care about parent
+                Function *wb_func = getOrDeclare(jl_intrinsics::writeBarrier1);
+                builder.CreateCall(wb_func, { parent });
             }
         }
 
