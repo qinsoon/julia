@@ -930,6 +930,9 @@ JL_DLLEXPORT void jl_clear_malloc_data(void);
 JL_DLLEXPORT void jl_gc_queue_root(const jl_value_t *root) JL_NOTSAFEPOINT;
 JL_DLLEXPORT void jl_gc_queue_multiroot(const jl_value_t *root, const jl_value_t *stored) JL_NOTSAFEPOINT;
 
+JL_DLLEXPORT void jl_gc_wb1_noinline(const void* parent) JL_NOTSAFEPOINT;
+JL_DLLEXPORT void jl_gc_wb2_noinline(const void* parent, const void* ptr) JL_NOTSAFEPOINT;
+
 #ifndef MMTK_GC
 STATIC_INLINE void jl_gc_wb(const void *parent, const void *ptr) JL_NOTSAFEPOINT
 {
@@ -962,17 +965,23 @@ STATIC_INLINE void jl_gc_multi_wb(const void *parent, const jl_value_t *ptr) JL_
 
 #else  // MMTK_GC
 
+STATIC_INLINE void mmtk_gc_wb(const void* parent, const void* ptr) JL_NOTSAFEPOINT;
+
 STATIC_INLINE void jl_gc_wb(const void *parent, const void *ptr) JL_NOTSAFEPOINT
 {
+    mmtk_gc_wb(parent, ptr);
 }
 
 STATIC_INLINE void jl_gc_wb_back(const void *ptr) JL_NOTSAFEPOINT // ptr isa jl_value_t*
 {
+    mmtk_gc_wb(ptr, (void*)0);
 }
 
 STATIC_INLINE void jl_gc_multi_wb(const void *parent, const jl_value_t *ptr) JL_NOTSAFEPOINT
 {
+    mmtk_gc_wb(parent, (void*)0);
 }
+
 #endif // MMTK_GC
 
 JL_DLLEXPORT void *jl_gc_managed_malloc(size_t sz);
@@ -1339,6 +1348,14 @@ STATIC_INLINE int jl_is_array(void *v) JL_NOTSAFEPOINT
     return jl_is_array_type(t);
 }
 
+STATIC_INLINE jl_value_t *jl_array_owner(jl_array_t *a JL_PROPAGATES_ROOT) JL_NOTSAFEPOINT
+{
+    if (a->flags.how == 3) {
+        a = (jl_array_t*)jl_array_data_owner(a);
+        assert(jl_is_string(a) || a->flags.how != 3);
+    }
+    return (jl_value_t*)a;
+}
 
 STATIC_INLINE int jl_is_opaque_closure_type(void *t) JL_NOTSAFEPOINT
 {
@@ -2267,6 +2284,18 @@ typedef struct {
     jl_value_t *generic_context;
 } jl_cgparams_t;
 extern JL_DLLEXPORT int jl_default_debug_info_kind;
+
+#ifdef MMTK_GC
+
+extern void mmtk_object_reference_write_post(void* mutator, void* src, void* target);
+
+STATIC_INLINE void mmtk_gc_wb(const void* parent, const void* ptr) JL_NOTSAFEPOINT
+{
+    jl_task_t *ct = jl_current_task;
+    jl_ptls_t ptls = ct->ptls;
+    mmtk_object_reference_write_post(ptls->mmtk_mutator_ptr, (void*)parent, (void*)ptr);
+}
+#endif
 
 #ifdef __cplusplus
 }

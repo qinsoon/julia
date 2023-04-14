@@ -193,12 +193,14 @@ void jl_gc_free_array(jl_array_t *a) JL_NOTSAFEPOINT
 JL_DLLEXPORT void jl_gc_queue_root(const jl_value_t *ptr)
 {
     /* TODO: not needed? */
+    unreachable();
 }
 
 // TODO: exported, but not MMTk-specific?
 JL_DLLEXPORT void jl_gc_queue_multiroot(const jl_value_t *parent, const jl_value_t *ptr) JL_NOTSAFEPOINT
 {
     /* TODO: confirm not needed? */
+    unreachable();
 }
 
 
@@ -207,11 +209,13 @@ JL_DLLEXPORT void jl_gc_queue_multiroot(const jl_value_t *parent, const jl_value
 
 JL_DLLEXPORT int jl_gc_mark_queue_obj(jl_ptls_t ptls, jl_value_t *obj)
 {
+    unreachable();
     return 0;
 }
 JL_DLLEXPORT void jl_gc_mark_queue_objarray(jl_ptls_t ptls, jl_value_t *parent,
                                             jl_value_t **objs, size_t nobjs)
 {
+    unreachable();
 }
 
 
@@ -478,6 +482,46 @@ void objprofile_printall(void)
 
 void objprofile_reset(void)
 {
+}
+
+// write barrier
+JL_DLLEXPORT void jl_gc_array_ptr_copy(jl_array_t *dest, void **dest_p, jl_array_t *src, void **src_p, ssize_t n) JL_NOTSAFEPOINT
+{
+    jl_ptls_t ptls = jl_current_task->ptls;
+    mmtk_memory_region_copy(ptls->mmtk_mutator_ptr, jl_array_owner(src), src_p, jl_array_owner(dest), dest_p, n);
+}
+
+// Generated code will directly call this for write barrier. Used for debugging.
+JL_DLLEXPORT void jl_gc_wb1_noinline(const void* parent) JL_NOTSAFEPOINT
+{
+    mmtk_gc_wb(parent, (const void*)0);
+}
+
+JL_DLLEXPORT void jl_gc_wb2_noinline(const void* parent, const void* ptr) JL_NOTSAFEPOINT
+{
+    mmtk_gc_wb(parent, ptr);
+}
+
+void *jl_gc_perm_alloc_nolock(size_t sz, int zero, unsigned align, unsigned offset)
+{
+    jl_ptls_t ptls = jl_current_task->ptls;
+    void* addr = alloc(ptls->mmtk_mutator_ptr, sz, align, offset, 1);
+    return addr;
+}
+
+void *jl_gc_perm_alloc(size_t sz, int zero, unsigned align, unsigned offset)
+{
+    return jl_gc_perm_alloc_nolock(sz, zero, align, offset);
+}
+
+void jl_gc_notify_image_load(const char* img_data, size_t len)
+{
+    mmtk_set_vm_space((void*)img_data, len);
+}
+
+void jl_gc_notify_image_alloc(char* img_data, size_t len)
+{
+    mmtk_immortal_region_post_alloc((void*)img_data, len);
 }
 
 #ifdef __cplusplus

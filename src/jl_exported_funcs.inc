@@ -523,6 +523,8 @@
     XX(jl_wakeup_thread) \
     XX(jl_write_compiler_output) \
     XX(jl_yield) \
+    XX(jl_gc_wb1_noinline) \
+    XX(jl_gc_wb2_noinline)
 
 #define JL_RUNTIME_EXPORTED_FUNCS_WIN(XX) \
     XX(jl_setjmp) \

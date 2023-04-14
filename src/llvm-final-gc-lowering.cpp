@@ -49,6 +49,8 @@ private:
     Function *poolAllocFunc;
     Function *bigAllocFunc;
     Instruction *pgcstack;
+    Function *writeBarrier1Func;
+    Function *writeBarrier2Func;
 
     // Lowers a `julia.new_gc_frame` intrinsic.
     Value *lowerNewGCFrame(CallInst *target, Function &F);
@@ -70,6 +72,12 @@ private:
 
     // Lowers a `julia.safepoint` intrinsic.
     Value *lowerSafepoint(CallInst *target, Function &F);
+
+    // Lowers a `julia.write_barrier1` intrinsic. This inserts a no-inline write barrier (debugging use).
+    Value *lowerWriteBarrier1(CallInst *target, Function &F);
+
+    // Lowers a `julia.write_barrier2` intrinsic. This inserts a no-inline write barrier (debugging use).
+    Value *lowerWriteBarrier2(CallInst *target, Function &F);
 };
 
 Value *FinalLowerGC::lowerNewGCFrame(CallInst *target, Function &F)
@@ -204,6 +212,20 @@ Value *FinalLowerGC::lowerSafepoint(CallInst *target, Function &F)
     return load;
 }
 
+Value *FinalLowerGC::lowerWriteBarrier1(CallInst *target, Function &F)
+{
+    assert(target->arg_size() == 1);
+    target->setCalledFunction(writeBarrier1Func);
+    return target;
+}
+
+Value *FinalLowerGC::lowerWriteBarrier2(CallInst *target, Function &F)
+{
+    assert(target->arg_size() == 2);
+    target->setCalledFunction(writeBarrier2Func);
+    return target;
+}
+
 Value *FinalLowerGC::lowerGCAllocBytes(CallInst *target, Function &F)
 {
     ++GCAllocBytesCount;
@@ -311,8 +333,11 @@ bool FinalLowerGC::doInitialization(Module &M) {
     queueRootFunc = getOrDeclare(jl_well_known::GCQueueRoot);
     poolAllocFunc = getOrDeclare(jl_well_known::GCPoolAlloc);
     bigAllocFunc = getOrDeclare(jl_well_known::GCBigAlloc);
+    writeBarrier1Func = getOrDeclare(jl_well_known::GCWriteBarrier1);
+    writeBarrier2Func = getOrDeclare(jl_well_known::GCWriteBarrier2);
 
-    GlobalValue *functionList[] = {queueRootFunc, poolAllocFunc, bigAllocFunc};
+    GlobalValue *functionList[] = {queueRootFunc, poolAllocFunc, bigAllocFunc, writeBarrier1Func, writeBarrier2Func};
+
     unsigned j = 0;
     for (unsigned i = 0; i < sizeof(functionList) / sizeof(void*); i++) {
         if (!functionList[i])
@@ -328,8 +353,8 @@ bool FinalLowerGC::doInitialization(Module &M) {
 
 bool FinalLowerGC::doFinalization(Module &M)
 {
-    GlobalValue *functionList[] = {queueRootFunc, poolAllocFunc, bigAllocFunc};
-    queueRootFunc = poolAllocFunc = bigAllocFunc = nullptr;
+    GlobalValue *functionList[] = {queueRootFunc, poolAllocFunc, bigAllocFunc, writeBarrier1Func, writeBarrier2Func};
+    queueRootFunc = poolAllocFunc = bigAllocFunc = writeBarrier1Func = writeBarrier2Func = nullptr;
     auto used = M.getGlobalVariable("llvm.compiler.used");
     if (!used)
         return false;
@@ -399,6 +424,8 @@ bool FinalLowerGC::runOnFunction(Function &F)
     auto GCAllocBytesFunc = getOrNull(jl_intrinsics::GCAllocBytes);
     auto queueGCRootFunc = getOrNull(jl_intrinsics::queueGCRoot);
     auto safepointFunc = getOrNull(jl_intrinsics::safepoint);
+    auto writeBarrier1Func = getOrNull(jl_intrinsics::writeBarrier1);
+    auto writeBarrier2Func = getOrNull(jl_intrinsics::writeBarrier2);
 
     // Lower all calls to supported intrinsics.
     for (BasicBlock &BB : F) {
@@ -431,6 +458,12 @@ bool FinalLowerGC::runOnFunction(Function &F)
             }
             else if (callee == queueGCRootFunc) {
                 replaceInstruction(CI, lowerQueueGCRoot(CI, F), it);
+            }
+            else if (callee == writeBarrier1Func) {
+                replaceInstruction(CI, lowerWriteBarrier1(CI, F), it);
+            }
+            else if (callee == writeBarrier2Func) {
+                replaceInstruction(CI, lowerWriteBarrier2(CI, F), it);
             }
             else if (callee == safepointFunc) {
                 lowerSafepoint(CI, F);

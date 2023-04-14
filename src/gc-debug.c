@@ -1257,6 +1257,8 @@ NOINLINE void gc_mark_loop_unwind(jl_ptls_t ptls, jl_gc_markqueue_t *mq, int off
     jl_set_safe_restore(old_buf);
 }
 
+extern int gc_logging_enabled;
+
 void _report_gc_finished(uint64_t pause, uint64_t freed, int full, int recollect) JL_NOTSAFEPOINT {
     if (!gc_logging_enabled) {
         return;

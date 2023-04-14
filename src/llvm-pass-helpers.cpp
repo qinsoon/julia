@@ -117,6 +117,8 @@ namespace jl_intrinsics {
     static const char *POP_GC_FRAME_NAME = "julia.pop_gc_frame";
     static const char *QUEUE_GC_ROOT_NAME = "julia.queue_gc_root";
     static const char *SAFEPOINT_NAME = "julia.safepoint";
+    static const char *WRITE_BARRIER_1_NAME = "julia.write_barrier1_noinline";
+    static const char *WRITE_BARRIER_2_NAME = "julia.write_barrier2_noinline";
 
     // Annotates a function with attributes suitable for GC allocation
     // functions. Specifically, the return value is marked noalias and nonnull.
@@ -223,12 +225,41 @@ namespace jl_intrinsics {
             intrinsic->addFnAttr(Attribute::InaccessibleMemOrArgMemOnly);
             return intrinsic;
         });
+
+    const IntrinsicDescription writeBarrier1(
+        WRITE_BARRIER_1_NAME,
+        [](const JuliaPassContext &context) {
+            auto intrinsic = Function::Create(
+                FunctionType::get(
+                    Type::getVoidTy(context.getLLVMContext()),
+                    { context.T_prjlvalue },
+                    false),
+                Function::ExternalLinkage,
+                WRITE_BARRIER_1_NAME);
+            intrinsic->addFnAttr(Attribute::InaccessibleMemOrArgMemOnly);
+            return intrinsic;
+        });
+    const IntrinsicDescription writeBarrier2(
+        WRITE_BARRIER_2_NAME,
+        [](const JuliaPassContext &context) {
+            auto intrinsic = Function::Create(
+                FunctionType::get(
+                    Type::getVoidTy(context.getLLVMContext()),
+                    { context.T_prjlvalue, context.T_prjlvalue },
+                    false),
+                Function::ExternalLinkage,
+                WRITE_BARRIER_2_NAME);
+            intrinsic->addFnAttr(Attribute::InaccessibleMemOrArgMemOnly);
+            return intrinsic;
+        });
 }
 
 namespace jl_well_known {
     static const char *GC_BIG_ALLOC_NAME = XSTR(jl_gc_big_alloc);
     static const char *GC_POOL_ALLOC_NAME = XSTR(jl_gc_pool_alloc);
     static const char *GC_QUEUE_ROOT_NAME = XSTR(jl_gc_queue_root);
+    static const char *GC_WB_1_NAME = XSTR(jl_gc_wb1_noinline);
+    static const char *GC_WB_2_NAME = XSTR(jl_gc_wb2_noinline);
 
     using jl_intrinsics::addGCAllocAttributes;
 
@@ -276,4 +307,32 @@ namespace jl_well_known {
             func->addFnAttr(Attribute::InaccessibleMemOrArgMemOnly);
             return func;
         });
+
+    const WellKnownFunctionDescription GCWriteBarrier1(
+        GC_WB_1_NAME,
+        [](const JuliaPassContext &context) {
+            auto func = Function::Create(
+                FunctionType::get(
+                    Type::getVoidTy(context.getLLVMContext()),
+                    { context.T_prjlvalue },
+                    false),
+                Function::ExternalLinkage,
+                GC_WB_1_NAME);
+            func->addFnAttr(Attribute::InaccessibleMemOrArgMemOnly);
+            return func;
+    });
+
+    const WellKnownFunctionDescription GCWriteBarrier2(
+        GC_WB_2_NAME,
+        [](const JuliaPassContext &context) {
+            auto func = Function::Create(
+                FunctionType::get(
+                    Type::getVoidTy(context.getLLVMContext()),
+                    { context.T_prjlvalue, context.T_prjlvalue },
+                    false),
+                Function::ExternalLinkage,
+                GC_WB_2_NAME);
+            func->addFnAttr(Attribute::InaccessibleMemOrArgMemOnly);
+            return func;
+    });
 }

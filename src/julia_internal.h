@@ -334,6 +334,7 @@ jl_value_t *jl_gc_big_alloc_noinline(jl_ptls_t ptls, size_t allocsz);
 #ifdef MMTK_GC
 JL_DLLEXPORT jl_value_t *jl_mmtk_gc_alloc_default(jl_ptls_t ptls, int pool_offset, int osize, void* ty);
 JL_DLLEXPORT jl_value_t *jl_mmtk_gc_alloc_big(jl_ptls_t ptls, size_t allocsz);
+extern void post_alloc(void* mutator, void* obj, size_t bytes, int allocator);
 #endif // MMTK_GC
 JL_DLLEXPORT int jl_gc_classify_pools(size_t sz, int *osize) JL_NOTSAFEPOINT;
 extern uv_mutex_t gc_perm_lock;
@@ -344,6 +345,8 @@ void *jl_gc_perm_alloc(size_t sz, int zero,
 void jl_gc_force_mark_old(jl_ptls_t ptls, jl_value_t *v);
 void gc_sweep_sysimg(void);
 
+void jl_gc_notify_image_load(const char* img_data, size_t len);
+void jl_gc_notify_image_alloc(char* img_data, size_t len);
 
 // pools are 16376 bytes large (GC_POOL_SZ - GC_PAGE_OFFSET)
 static const int jl_gc_sizeclasses[] = {
@@ -536,6 +539,10 @@ STATIC_INLINE jl_value_t *jl_gc_permobj(size_t sz, void *ty) JL_NOTSAFEPOINT
                                                               sizeof(void*) % align);
     uintptr_t tag = (uintptr_t)ty;
     o->header = tag | GC_OLD_MARKED;
+#ifdef MMTK_GC
+    jl_ptls_t ptls = jl_current_task->ptls;
+    post_alloc(ptls->mmtk_mutator_ptr, jl_valueof(o), allocsz, 1);
+#endif
     return jl_valueof(o);
 }
 jl_value_t *jl_permbox8(jl_datatype_t *t, int8_t x);
@@ -605,17 +612,20 @@ STATIC_INLINE void jl_gc_wb_buf(void *parent, void *bufptr, size_t minsz) JL_NOT
         gc_setmark_buf(ct->ptls, bufptr, 3, minsz);
     }
 }
-
 #else  // MMTK_GC
 
 STATIC_INLINE void jl_gc_wb_binding(jl_binding_t *bnd, void *val) JL_NOTSAFEPOINT // val isa jl_value_t*
 {
+    jl_gc_wb(bnd, val);
 }
 
 STATIC_INLINE void jl_gc_wb_buf(void *parent, void *bufptr, size_t minsz) JL_NOTSAFEPOINT // parent isa jl_value_t*
 {
+    jl_gc_wb(parent, (void*)0);
 }
 #endif // MMTK_GC
+
+JL_DLLEXPORT void jl_gc_array_ptr_copy(jl_array_t *dest, void **dest_p, jl_array_t *src, void **src_p, ssize_t n) JL_NOTSAFEPOINT;
 
 void jl_gc_debug_print_status(void) JL_NOTSAFEPOINT;
 JL_DLLEXPORT void jl_gc_debug_critical_error(void) JL_NOTSAFEPOINT;
