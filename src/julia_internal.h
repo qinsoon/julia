@@ -334,6 +334,7 @@ jl_value_t *jl_gc_big_alloc_noinline(jl_ptls_t ptls, size_t allocsz);
 #ifdef MMTK_GC
 JL_DLLEXPORT jl_value_t *jl_mmtk_gc_alloc_default(jl_ptls_t ptls, int pool_offset, int osize, void* ty);
 JL_DLLEXPORT jl_value_t *jl_mmtk_gc_alloc_big(jl_ptls_t ptls, size_t allocsz);
+extern void post_alloc(void* mutator, void* obj, size_t bytes, int allocator);
 #endif // MMTK_GC
 JL_DLLEXPORT int jl_gc_classify_pools(size_t sz, int *osize) JL_NOTSAFEPOINT;
 extern uv_mutex_t gc_perm_lock;
@@ -344,6 +345,8 @@ void *jl_gc_perm_alloc(size_t sz, int zero,
 void jl_gc_force_mark_old(jl_ptls_t ptls, jl_value_t *v);
 void gc_sweep_sysimg(void);
 
+void jl_gc_notify_image_load(const char* img_data, size_t len);
+void jl_gc_notify_image_alloc(char* img_data, size_t len);
 
 // pools are 16376 bytes large (GC_POOL_SZ - GC_PAGE_OFFSET)
 static const int jl_gc_sizeclasses[] = {
@@ -534,8 +537,13 @@ STATIC_INLINE jl_value_t *jl_gc_permobj(size_t sz, void *ty) JL_NOTSAFEPOINT
                                                  sizeof(void*) * 2 : 16));
     jl_taggedvalue_t *o = (jl_taggedvalue_t*)jl_gc_perm_alloc(allocsz, 0, align,
                                                               sizeof(void*) % align);
+    // Possibly we do not need this for MMTk. We could declare a post_alloc func and define it differently in two GCs.
     uintptr_t tag = (uintptr_t)ty;
     o->header = tag | GC_OLD_MARKED;
+#ifdef MMTK_GC
+    jl_ptls_t ptls = jl_current_task->ptls;
+    post_alloc(ptls->mmtk_mutator_ptr, jl_valueof(o), allocsz, 1);
+#endif
     return jl_valueof(o);
 }
 jl_value_t *jl_permbox8(jl_datatype_t *t, int8_t x);

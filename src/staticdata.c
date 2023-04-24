@@ -489,6 +489,7 @@ static void jl_load_sysimg_so(void)
     jl_dlsym(jl_sysimg_handle, "jl_system_image_data", (void **)&sysimg_data, 1);
     size_t *plen;
     jl_dlsym(jl_sysimg_handle, "jl_system_image_size", (void **)&plen, 1);
+    jl_gc_notify_image_load(sysimg_data, *plen);
     jl_restore_system_image_data(sysimg_data, *plen);
 }
 
@@ -3235,6 +3236,7 @@ static jl_value_t *jl_restore_package_image_from_stream(ios_t *f, jl_image_t *im
         JL_SIGATOMIC_BEGIN();
         size_t len = dataendpos - datastartpos;
         char *sysimg = (char*)jl_gc_perm_alloc(len, 0, 64, 0);
+        jl_gc_notify_image_alloc(sysimg, len);
         ios_seek(f, datastartpos);
         if (ios_readall(f, sysimg, len) != len || jl_crc32c(0, sysimg, len) != (uint32_t)checksum) {
             restored = jl_get_exceptionf(jl_errorexception_type, "Error reading system image file.");
@@ -3331,6 +3333,7 @@ JL_DLLEXPORT void jl_restore_system_image(const char *fname)
         ios_seek_end(&f);
         size_t len = ios_pos(&f);
         char *sysimg = (char*)jl_gc_perm_alloc(len, 0, 64, 0);
+        jl_gc_notify_image_alloc(sysimg, len);
         ios_seek(&f, 0);
         if (ios_readall(&f, sysimg, len) != len)
             jl_errorf("Error reading system image file.");
