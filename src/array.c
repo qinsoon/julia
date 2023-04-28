@@ -59,15 +59,6 @@ JL_DLLEXPORT char *jl_array_typetagdata(jl_array_t *a) JL_NOTSAFEPOINT
     return ((char*)jl_array_data(a)) + ((jl_array_ndims(a) == 1 ? (a->maxsize - a->offset) : jl_array_len(a)) * a->elsize) + a->offset;
 }
 
-STATIC_INLINE jl_value_t *jl_array_owner(jl_array_t *a JL_PROPAGATES_ROOT) JL_NOTSAFEPOINT
-{
-    if (a->flags.how == 3) {
-        a = (jl_array_t*)jl_array_data_owner(a);
-        assert(jl_is_string(a) || a->flags.how != 3);
-    }
-    return (jl_value_t*)a;
-}
-
 #if defined(_P64) && defined(UINT128MAX)
 typedef __uint128_t wideint_t;
 #else
@@ -1198,69 +1189,11 @@ JL_DLLEXPORT jl_array_t *jl_array_copy(jl_array_t *ary)
     return new_ary;
 }
 
-// Copy element by element until we hit a young object, at which point
-// we can finish by using `memmove`.
-static NOINLINE ssize_t jl_array_ptr_copy_forward(jl_value_t *owner,
-                                                  void **src_p, void **dest_p,
-                                                  ssize_t n) JL_NOTSAFEPOINT
-{
-    _Atomic(void*) *src_pa = (_Atomic(void*)*)src_p;
-    _Atomic(void*) *dest_pa = (_Atomic(void*)*)dest_p;
-    for (ssize_t i = 0; i < n; i++) {
-        void *val = jl_atomic_load_relaxed(src_pa + i);
-        jl_atomic_store_release(dest_pa + i, val);
-        // `val` is young or old-unmarked
-        if (val && !(jl_astaggedvalue(val)->bits.gc & GC_MARKED)) {
-            jl_gc_queue_root(owner);
-            return i;
-        }
-    }
-    return n;
-}
-
-static NOINLINE ssize_t jl_array_ptr_copy_backward(jl_value_t *owner,
-                                                   void **src_p, void **dest_p,
-                                                   ssize_t n) JL_NOTSAFEPOINT
-{
-    _Atomic(void*) *src_pa = (_Atomic(void*)*)src_p;
-    _Atomic(void*) *dest_pa = (_Atomic(void*)*)dest_p;
-    for (ssize_t i = 0; i < n; i++) {
-        void *val = jl_atomic_load_relaxed(src_pa + n - i - 1);
-        jl_atomic_store_release(dest_pa + n - i - 1, val);
-        // `val` is young or old-unmarked
-        if (val && !(jl_astaggedvalue(val)->bits.gc & GC_MARKED)) {
-            jl_gc_queue_root(owner);
-            return i;
-        }
-    }
-    return n;
-}
-
 // Unsafe, assume inbounds and that dest and src have the same eltype
 JL_DLLEXPORT void jl_array_ptr_copy(jl_array_t *dest, void **dest_p,
                                     jl_array_t *src, void **src_p, ssize_t n) JL_NOTSAFEPOINT
 {
-    assert(dest->flags.ptrarray && src->flags.ptrarray);
-    jl_value_t *owner = jl_array_owner(dest);
-    // Destination is old and doesn't refer to any young object
-    if (__unlikely(jl_astaggedvalue(owner)->bits.gc == GC_OLD_MARKED)) {
-        jl_value_t *src_owner = jl_array_owner(src);
-        // Source is young or being promoted or might refer to young objects
-        // (i.e. source is not an old object that doesn't have wb triggered)
-        if (jl_astaggedvalue(src_owner)->bits.gc != GC_OLD_MARKED) {
-            ssize_t done;
-            if (dest_p < src_p || dest_p > src_p + n) {
-                done = jl_array_ptr_copy_forward(owner, src_p, dest_p, n);
-                dest_p += done;
-                src_p += done;
-            }
-            else {
-                done = jl_array_ptr_copy_backward(owner, src_p, dest_p, n);
-            }
-            n -= done;
-        }
-    }
-    memmove_refs(dest_p, src_p, n);
+    jl_gc_array_ptr_copy(dest, dest_p, src, src_p, n);
 }
 
 JL_DLLEXPORT void jl_array_ptr_1d_push(jl_array_t *a, jl_value_t *item)

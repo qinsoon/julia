@@ -1339,6 +1339,14 @@ STATIC_INLINE int jl_is_array(void *v) JL_NOTSAFEPOINT
     return jl_is_array_type(t);
 }
 
+STATIC_INLINE jl_value_t *jl_array_owner(jl_array_t *a JL_PROPAGATES_ROOT) JL_NOTSAFEPOINT
+{
+    if (a->flags.how == 3) {
+        a = (jl_array_t*)jl_array_data_owner(a);
+        assert(jl_is_string(a) || a->flags.how != 3);
+    }
+    return (jl_value_t*)a;
+}
 
 STATIC_INLINE int jl_is_opaque_closure_type(void *t) JL_NOTSAFEPOINT
 {
