@@ -480,6 +480,17 @@ void objprofile_reset(void)
 {
 }
 
+// No inline write barrier -- only used for debugging
+JL_DLLEXPORT void jl_gc_wb1_noinline(const void *parent) JL_NOTSAFEPOINT
+{
+    jl_gc_wb_back(parent);
+}
+
+JL_DLLEXPORT void jl_gc_wb2_noinline(const void *parent, const void *ptr) JL_NOTSAFEPOINT
+{
+    jl_gc_wb(parent, ptr);
+}
+
 #ifdef __cplusplus
 }
 #endif

@@ -608,12 +608,16 @@ STATIC_INLINE void jl_gc_wb_buf(void *parent, void *bufptr, size_t minsz) JL_NOT
 
 #else  // MMTK_GC
 
+// TODO: We should inline fastpath in the following functions, and only call slowpath.
+
 STATIC_INLINE void jl_gc_wb_binding(jl_binding_t *bnd, void *val) JL_NOTSAFEPOINT // val isa jl_value_t*
 {
+    mmtk_gc_wb_full(bnd, val);
 }
 
 STATIC_INLINE void jl_gc_wb_buf(void *parent, void *bufptr, size_t minsz) JL_NOTSAFEPOINT // parent isa jl_value_t*
 {
+    mmtk_gc_wb_full(parent, (void*)0);
 }
 #endif // MMTK_GC
 
