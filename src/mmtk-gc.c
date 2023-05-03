@@ -494,7 +494,6 @@ void *jl_gc_perm_alloc(size_t sz, int zero, unsigned align, unsigned offset)
 
 void jl_gc_notify_image_load(const char* img_data, size_t len)
 {
-    // TODO: We should notify MMTk about the image (VM space)
     mmtk_set_vm_space((void*)img_data, len);
 }
 
