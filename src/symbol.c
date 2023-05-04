@@ -41,6 +41,10 @@ static jl_sym_t *mk_symbol(const char *str, size_t len) JL_NOTSAFEPOINT
     sym = (jl_sym_t*)jl_valueof(tag);
     // set to old marked so that we won't look at it in the GC or write barrier.
     tag->header = ((uintptr_t)jl_symbol_type) | GC_OLD_MARKED;
+#ifdef MMTK_GC
+    jl_ptls_t ptls = jl_current_task->ptls;
+    post_alloc(ptls->mmtk_mutator_ptr, jl_valueof(tag), nb, 1);
+#endif
     jl_atomic_store_relaxed(&sym->left, NULL);
     jl_atomic_store_relaxed(&sym->right, NULL);
     sym->hash = hash_symbol(str, len);
