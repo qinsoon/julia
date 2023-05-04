@@ -2547,9 +2547,12 @@ bool LateLowerGCFrame::CleanupIR(Function &F, State *S, bool *CFGModified) {
             //     Function *wb_func = getOrDeclare(jl_intrinsics::writeBarrier1);
             //     builder.CreateCall(wb_func, { parent });
             // }
-            // We only care about parent
-            Function *wb_func = getOrDeclare(jl_intrinsics::writeBarrier1);
-            builder.CreateCall(wb_func, { parent });
+            auto barrier = mmtk_needs_write_barrier();
+            if (barrier == 1) {
+                // We only care about parent
+                Function *wb_func = getOrDeclare(jl_intrinsics::writeBarrier1);
+                builder.CreateCall(wb_func, { parent });
+            }
         }
 #endif
 
