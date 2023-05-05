@@ -184,6 +184,7 @@ JL_DLLEXPORT void jl_gc_array_ptr_copy(jl_array_t *dest, void **dest_p,
 #define GC_PERM_POOL_SIZE (2 * 1024 * 1024)
 // 20k limit for pool allocation. At most 1% fragmentation
 #define GC_PERM_POOL_LIMIT (20 * 1024)
+
 static uintptr_t gc_perm_pool = 0;
 static uintptr_t gc_perm_end = 0;
 
@@ -265,6 +266,16 @@ void *jl_gc_perm_alloc(size_t sz, int zero, unsigned align, unsigned offset)
     void *p = jl_gc_perm_alloc_nolock(sz, zero, align, offset);
     uv_mutex_unlock(&gc_perm_lock);
     return p;
+}
+
+void jl_gc_notify_image_load(const char* img_data, size_t len)
+{
+    // Do nothing
+}
+
+void jl_gc_notify_image_alloc(char* img_data, size_t len)
+{
+    // Do nothing
 }
 
 // Protect all access to `finalizer_list_marked` and `to_finalize`.

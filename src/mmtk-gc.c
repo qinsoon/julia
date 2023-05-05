@@ -480,10 +480,44 @@ void objprofile_reset(void)
 {
 }
 
+<<<<<<< HEAD
 JL_DLLEXPORT void jl_gc_array_ptr_copy(jl_array_t *dest, void **dest_p, jl_array_t *src, void **src_p, ssize_t n) JL_NOTSAFEPOINT
 {
     jl_ptls_t ptls = jl_current_task->ptls;
     mmtk_memory_region_copy(ptls->mmtk_mutator_ptr, jl_array_owner(src), src_p, jl_array_owner(dest), dest_p, n);
+=======
+// No inline write barrier -- only used for debugging
+JL_DLLEXPORT void jl_gc_wb1_noinline(const void *parent) JL_NOTSAFEPOINT
+{
+    jl_gc_wb_back(parent);
+}
+
+JL_DLLEXPORT void jl_gc_wb2_noinline(const void *parent, const void *ptr) JL_NOTSAFEPOINT
+{
+    jl_gc_wb(parent, ptr);
+}
+
+void *jl_gc_perm_alloc_nolock(size_t sz, int zero, unsigned align, unsigned offset)
+{
+    jl_ptls_t ptls = jl_current_task->ptls;
+    void* addr = alloc(ptls->mmtk_mutator_ptr, sz, align, offset, 1);
+    return addr;
+}
+
+void *jl_gc_perm_alloc(size_t sz, int zero, unsigned align, unsigned offset)
+{
+    return jl_gc_perm_alloc_nolock(sz, zero, align, offset);
+}
+
+void jl_gc_notify_image_load(const char* img_data, size_t len)
+{
+    // TODO: We should notify MMTk about the image (VM space)
+}
+
+void jl_gc_notify_image_alloc(char* img_data, size_t len)
+{
+    // TODO: We should call MMTk to bulk set object metadata for the image region
+>>>>>>> master
 }
 
 #ifdef __cplusplus
