@@ -233,7 +233,7 @@ JL_DLLEXPORT void jl_gc_collect(jl_gc_collection_t collection)
         jl_atomic_fetch_add((_Atomic(uint64_t)*)&gc_num.deferred_alloc, localbytes);
         return;
     }
-    handle_user_collection_request(ptls);
+    handle_user_collection_request(ptls, collection);
 }
 
 // Per-thread initialization
