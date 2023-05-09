@@ -930,9 +930,6 @@ JL_DLLEXPORT void jl_clear_malloc_data(void);
 JL_DLLEXPORT void jl_gc_queue_root(const jl_value_t *root) JL_NOTSAFEPOINT;
 JL_DLLEXPORT void jl_gc_queue_multiroot(const jl_value_t *root, const jl_value_t *stored) JL_NOTSAFEPOINT;
 
-JL_DLLEXPORT void jl_gc_wb1_noinline(const void* parent) JL_NOTSAFEPOINT;
-JL_DLLEXPORT void jl_gc_wb2_noinline(const void* parent, const void* ptr) JL_NOTSAFEPOINT;
-
 #ifndef MMTK_GC
 STATIC_INLINE void jl_gc_wb(const void *parent, const void *ptr) JL_NOTSAFEPOINT
 {
@@ -968,8 +965,6 @@ STATIC_INLINE void jl_gc_multi_wb(const void *parent, const jl_value_t *ptr) JL_
 // TODO: We should inline fastpath in the following functions, and only call slowpath.
 STATIC_INLINE void mmtk_gc_wb_full(const void *parent, const void *ptr) JL_NOTSAFEPOINT;
 
-STATIC_INLINE void mmtk_gc_wb(const void* parent, const void* ptr) JL_NOTSAFEPOINT;
-
 STATIC_INLINE void jl_gc_wb(const void *parent, const void *ptr) JL_NOTSAFEPOINT
 {
     mmtk_gc_wb_full(parent, ptr);
@@ -984,7 +979,6 @@ STATIC_INLINE void jl_gc_multi_wb(const void *parent, const jl_value_t *ptr) JL_
 {
     mmtk_gc_wb_full(parent, (void*)0);
 }
-
 #endif // MMTK_GC
 
 JL_DLLEXPORT void *jl_gc_managed_malloc(size_t sz);

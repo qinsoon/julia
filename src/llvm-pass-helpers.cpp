@@ -117,15 +117,10 @@ namespace jl_intrinsics {
     static const char *POP_GC_FRAME_NAME = "julia.pop_gc_frame";
     static const char *QUEUE_GC_ROOT_NAME = "julia.queue_gc_root";
     static const char *SAFEPOINT_NAME = "julia.safepoint";
-<<<<<<< HEAD
-    static const char *WRITE_BARRIER_1_NAME = "julia.write_barrier1_noinline";
-    static const char *WRITE_BARRIER_2_NAME = "julia.write_barrier2_noinline";
-=======
 #ifdef MMTK_GC
     static const char *WRITE_BARRIER_1_NAME = "julia.write_barrier1_noinline";
     static const char *WRITE_BARRIER_2_NAME = "julia.write_barrier2_noinline";
 #endif
->>>>>>> master
 
     // Annotates a function with attributes suitable for GC allocation
     // functions. Specifically, the return value is marked noalias and nonnull.
@@ -233,10 +228,7 @@ namespace jl_intrinsics {
             return intrinsic;
         });
 
-<<<<<<< HEAD
-=======
 #ifdef MMTK_GC
->>>>>>> master
     const IntrinsicDescription writeBarrier1(
         WRITE_BARRIER_1_NAME,
         [](const JuliaPassContext &context) {
@@ -263,25 +255,17 @@ namespace jl_intrinsics {
             intrinsic->addFnAttr(Attribute::InaccessibleMemOrArgMemOnly);
             return intrinsic;
         });
-<<<<<<< HEAD
-=======
 #endif
->>>>>>> master
 }
 
 namespace jl_well_known {
     static const char *GC_BIG_ALLOC_NAME = XSTR(jl_gc_big_alloc);
     static const char *GC_POOL_ALLOC_NAME = XSTR(jl_gc_pool_alloc);
     static const char *GC_QUEUE_ROOT_NAME = XSTR(jl_gc_queue_root);
-<<<<<<< HEAD
-    static const char *GC_WB_1_NAME = XSTR(jl_gc_wb1_noinline);
-    static const char *GC_WB_2_NAME = XSTR(jl_gc_wb2_noinline);
-=======
 #ifdef MMTK_GC
     static const char *GC_WB_1_NAME = XSTR(jl_gc_wb1_noinline);
     static const char *GC_WB_2_NAME = XSTR(jl_gc_wb2_noinline);
 #endif
->>>>>>> master
 
     using jl_intrinsics::addGCAllocAttributes;
 
@@ -330,10 +314,7 @@ namespace jl_well_known {
             return func;
         });
 
-<<<<<<< HEAD
-=======
 #ifdef MMTK_GC
->>>>>>> master
     const WellKnownFunctionDescription GCWriteBarrier1(
         GC_WB_1_NAME,
         [](const JuliaPassContext &context) {
@@ -361,8 +342,5 @@ namespace jl_well_known {
             func->addFnAttr(Attribute::InaccessibleMemOrArgMemOnly);
             return func;
     });
-<<<<<<< HEAD
-=======
 #endif
->>>>>>> master
 }

@@ -184,10 +184,7 @@ JL_DLLEXPORT void jl_gc_array_ptr_copy(jl_array_t *dest, void **dest_p,
 #define GC_PERM_POOL_SIZE (2 * 1024 * 1024)
 // 20k limit for pool allocation. At most 1% fragmentation
 #define GC_PERM_POOL_LIMIT (20 * 1024)
-<<<<<<< HEAD
-=======
 
->>>>>>> master
 static uintptr_t gc_perm_pool = 0;
 static uintptr_t gc_perm_end = 0;
 
@@ -3307,27 +3304,6 @@ void enable_collection(void)
 }
 void disable_collection(void)
 {
-}
-
-// Generated code will directly call this for write barrier. Used for debugging.
-JL_DLLEXPORT void jl_gc_wb1_noinline(const void* parent) JL_NOTSAFEPOINT
-{
-    jl_gc_wb_back(parent);
-}
-
-JL_DLLEXPORT void jl_gc_wb2_noinline(const void* parent, const void* ptr) JL_NOTSAFEPOINT
-{
-    jl_gc_wb(parent, ptr);
-}
-
-void jl_gc_notify_image_load(const char* img_data, size_t len)
-{
-    // Do nothing
-}
-
-void jl_gc_notify_image_alloc(char* img_data, size_t len)
-{
-    // Do nothing
 }
 
 #ifdef __cplusplus

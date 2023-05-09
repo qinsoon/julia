@@ -614,6 +614,7 @@ STATIC_INLINE void jl_gc_wb_buf(void *parent, void *bufptr, size_t minsz) JL_NOT
         gc_setmark_buf(ct->ptls, bufptr, 3, minsz);
     }
 }
+
 #else  // MMTK_GC
 
 // TODO: We should inline fastpath in the following functions, and only call slowpath.

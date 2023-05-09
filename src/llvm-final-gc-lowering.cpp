@@ -53,8 +53,6 @@ private:
     Function *writeBarrier2Func;
 #endif
     Instruction *pgcstack;
-    Function *writeBarrier1Func;
-    Function *writeBarrier2Func;
 
     // Lowers a `julia.new_gc_frame` intrinsic.
     Value *lowerNewGCFrame(CallInst *target, Function &F);
