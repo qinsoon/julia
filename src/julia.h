@@ -964,22 +964,25 @@ STATIC_INLINE void jl_gc_multi_wb(const void *parent, const jl_value_t *ptr) JL_
 }
 
 #else  // MMTK_GC
+// MMTk's write barrier method. This is the full write barier including fastpath and slowpath.
+// TODO: We should inline fastpath in the following functions, and only call slowpath.
+STATIC_INLINE void mmtk_gc_wb_full(const void *parent, const void *ptr) JL_NOTSAFEPOINT;
 
 STATIC_INLINE void mmtk_gc_wb(const void* parent, const void* ptr) JL_NOTSAFEPOINT;
 
 STATIC_INLINE void jl_gc_wb(const void *parent, const void *ptr) JL_NOTSAFEPOINT
 {
-    mmtk_gc_wb(parent, ptr);
+    mmtk_gc_wb_full(parent, ptr);
 }
 
 STATIC_INLINE void jl_gc_wb_back(const void *ptr) JL_NOTSAFEPOINT // ptr isa jl_value_t*
 {
-    mmtk_gc_wb(ptr, (void*)0);
+    mmtk_gc_wb_full(ptr, (void*)0);
 }
 
 STATIC_INLINE void jl_gc_multi_wb(const void *parent, const jl_value_t *ptr) JL_NOTSAFEPOINT
 {
-    mmtk_gc_wb(parent, (void*)0);
+    mmtk_gc_wb_full(parent, (void*)0);
 }
 
 #endif // MMTK_GC
@@ -2286,14 +2289,12 @@ typedef struct {
 extern JL_DLLEXPORT int jl_default_debug_info_kind;
 
 #ifdef MMTK_GC
-
-extern void mmtk_object_reference_write_post(void* mutator, void* src, void* target);
-
-STATIC_INLINE void mmtk_gc_wb(const void* parent, const void* ptr) JL_NOTSAFEPOINT
+extern void mmtk_object_reference_write_post(void* mutator, const void* parent, const void* ptr);
+STATIC_INLINE void mmtk_gc_wb_full(const void *parent, const void *ptr) JL_NOTSAFEPOINT
 {
     jl_task_t *ct = jl_current_task;
     jl_ptls_t ptls = ct->ptls;
-    mmtk_object_reference_write_post(ptls->mmtk_mutator_ptr, (void*)parent, (void*)ptr);
+    mmtk_object_reference_write_post(ptls->mmtk_mutator_ptr, parent, ptr);
 }
 #endif
 

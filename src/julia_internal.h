@@ -335,6 +335,7 @@ jl_value_t *jl_gc_big_alloc_noinline(jl_ptls_t ptls, size_t allocsz);
 JL_DLLEXPORT jl_value_t *jl_mmtk_gc_alloc_default(jl_ptls_t ptls, int pool_offset, int osize, void* ty);
 JL_DLLEXPORT jl_value_t *jl_mmtk_gc_alloc_big(jl_ptls_t ptls, size_t allocsz);
 extern void post_alloc(void* mutator, void* obj, size_t bytes, int allocator);
+extern uint8_t mmtk_needs_write_barrier(void);
 #endif // MMTK_GC
 JL_DLLEXPORT int jl_gc_classify_pools(size_t sz, int *osize) JL_NOTSAFEPOINT;
 extern uv_mutex_t gc_perm_lock;
@@ -537,6 +538,7 @@ STATIC_INLINE jl_value_t *jl_gc_permobj(size_t sz, void *ty) JL_NOTSAFEPOINT
                                                  sizeof(void*) * 2 : 16));
     jl_taggedvalue_t *o = (jl_taggedvalue_t*)jl_gc_perm_alloc(allocsz, 0, align,
                                                               sizeof(void*) % align);
+    // Possibly we do not need this for MMTk. We could declare a post_alloc func and define it differently in two GCs.
     uintptr_t tag = (uintptr_t)ty;
     o->header = tag | GC_OLD_MARKED;
 #ifdef MMTK_GC
@@ -614,14 +616,16 @@ STATIC_INLINE void jl_gc_wb_buf(void *parent, void *bufptr, size_t minsz) JL_NOT
 }
 #else  // MMTK_GC
 
+// TODO: We should inline fastpath in the following functions, and only call slowpath.
+
 STATIC_INLINE void jl_gc_wb_binding(jl_binding_t *bnd, void *val) JL_NOTSAFEPOINT // val isa jl_value_t*
 {
-    jl_gc_wb(bnd, val);
+    mmtk_gc_wb_full(bnd, val);
 }
 
 STATIC_INLINE void jl_gc_wb_buf(void *parent, void *bufptr, size_t minsz) JL_NOTSAFEPOINT // parent isa jl_value_t*
 {
-    jl_gc_wb(parent, (void*)0);
+    mmtk_gc_wb_full(parent, (void*)0);
 }
 #endif // MMTK_GC
 

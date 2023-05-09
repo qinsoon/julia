@@ -130,11 +130,10 @@ namespace jl_intrinsics {
     // `julia.safepoint`: an intrinsic that triggers a GC safepoint.
     extern const IntrinsicDescription safepoint;
 
-    // `julia.write_barrier_1`: an intrinsic for non-inlined GC write barrier (debugging use)
+#ifdef MMTK_GC
     extern const IntrinsicDescription writeBarrier1;
-
-    // `julia.write_barrier_2`: an intrinsic for non-inlined GC write barrier (debugging use)
     extern const IntrinsicDescription writeBarrier2;
+#endif
 }
 
 // A namespace for well-known Julia runtime function descriptions.
@@ -156,11 +155,10 @@ namespace jl_well_known {
     // `jl_gc_queue_root`: queues a GC root.
     extern const WellKnownFunctionDescription GCQueueRoot;
 
-    // `jl_gc_wb1_noinline`: write barrier on parent
+#ifdef MMTK_GC
     extern const WellKnownFunctionDescription GCWriteBarrier1;
-
-    // `jl_gc_wb2_noinline`: write barrier on parent and target
     extern const WellKnownFunctionDescription GCWriteBarrier2;
+#endif
 }
 
 #endif

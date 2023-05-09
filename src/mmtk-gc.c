@@ -484,22 +484,21 @@ void objprofile_reset(void)
 {
 }
 
-// write barrier
 JL_DLLEXPORT void jl_gc_array_ptr_copy(jl_array_t *dest, void **dest_p, jl_array_t *src, void **src_p, ssize_t n) JL_NOTSAFEPOINT
 {
     jl_ptls_t ptls = jl_current_task->ptls;
     mmtk_memory_region_copy(ptls->mmtk_mutator_ptr, jl_array_owner(src), src_p, jl_array_owner(dest), dest_p, n);
 }
 
-// Generated code will directly call this for write barrier. Used for debugging.
-JL_DLLEXPORT void jl_gc_wb1_noinline(const void* parent) JL_NOTSAFEPOINT
+// No inline write barrier -- only used for debugging
+JL_DLLEXPORT void jl_gc_wb1_noinline(const void *parent) JL_NOTSAFEPOINT
 {
-    mmtk_gc_wb(parent, (const void*)0);
+    jl_gc_wb_back(parent);
 }
 
-JL_DLLEXPORT void jl_gc_wb2_noinline(const void* parent, const void* ptr) JL_NOTSAFEPOINT
+JL_DLLEXPORT void jl_gc_wb2_noinline(const void *parent, const void *ptr) JL_NOTSAFEPOINT
 {
-    mmtk_gc_wb(parent, ptr);
+    jl_gc_wb(parent, ptr);
 }
 
 void *jl_gc_perm_alloc_nolock(size_t sz, int zero, unsigned align, unsigned offset)
