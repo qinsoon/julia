@@ -133,6 +133,7 @@ namespace jl_intrinsics {
 #ifdef MMTK_GC
     extern const IntrinsicDescription writeBarrier1;
     extern const IntrinsicDescription writeBarrier2;
+    extern const IntrinsicDescription writeBarrierSlow;
 #endif
 }
 
@@ -158,6 +159,7 @@ namespace jl_well_known {
 #ifdef MMTK_GC
     extern const WellKnownFunctionDescription GCWriteBarrier1;
     extern const WellKnownFunctionDescription GCWriteBarrier2;
+    extern const WellKnownFunctionDescription GCWriteBarrierSlow;
 #endif
 }
 

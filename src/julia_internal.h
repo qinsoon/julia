@@ -335,7 +335,8 @@ jl_value_t *jl_gc_big_alloc_noinline(jl_ptls_t ptls, size_t allocsz);
 JL_DLLEXPORT jl_value_t *jl_mmtk_gc_alloc_default(jl_ptls_t ptls, int pool_offset, int osize, void* ty);
 JL_DLLEXPORT jl_value_t *jl_mmtk_gc_alloc_big(jl_ptls_t ptls, size_t allocsz);
 extern void post_alloc(void* mutator, void* obj, size_t bytes, int allocator);
-extern uint8_t mmtk_needs_write_barrier(void);
+// extern const uint8_t MMTK_NEEDS_WRITE_BARRIER;
+// extern const void* MMTK_SIDE_LOG_BIT_BASE_ADDRESS;
 #endif // MMTK_GC
 JL_DLLEXPORT int jl_gc_classify_pools(size_t sz, int *osize) JL_NOTSAFEPOINT;
 extern uv_mutex_t gc_perm_lock;
@@ -617,16 +618,14 @@ STATIC_INLINE void jl_gc_wb_buf(void *parent, void *bufptr, size_t minsz) JL_NOT
 
 #else  // MMTK_GC
 
-// TODO: We should inline fastpath in the following functions, and only call slowpath.
-
 STATIC_INLINE void jl_gc_wb_binding(jl_binding_t *bnd, void *val) JL_NOTSAFEPOINT // val isa jl_value_t*
 {
-    mmtk_gc_wb_full(bnd, val);
+    mmtk_gc_wb(bnd, val);
 }
 
 STATIC_INLINE void jl_gc_wb_buf(void *parent, void *bufptr, size_t minsz) JL_NOTSAFEPOINT // parent isa jl_value_t*
 {
-    mmtk_gc_wb_full(parent, (void*)0);
+    mmtk_gc_wb(parent, (void*)0);
 }
 #endif // MMTK_GC
 

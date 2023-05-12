@@ -961,23 +961,21 @@ STATIC_INLINE void jl_gc_multi_wb(const void *parent, const jl_value_t *ptr) JL_
 }
 
 #else  // MMTK_GC
-// MMTk's write barrier method. This is the full write barier including fastpath and slowpath.
-// TODO: We should inline fastpath in the following functions, and only call slowpath.
-STATIC_INLINE void mmtk_gc_wb_full(const void *parent, const void *ptr) JL_NOTSAFEPOINT;
+STATIC_INLINE void mmtk_gc_wb(const void *parent, const void *ptr) JL_NOTSAFEPOINT;
 
 STATIC_INLINE void jl_gc_wb(const void *parent, const void *ptr) JL_NOTSAFEPOINT
 {
-    mmtk_gc_wb_full(parent, ptr);
+    mmtk_gc_wb(parent, ptr);
 }
 
 STATIC_INLINE void jl_gc_wb_back(const void *ptr) JL_NOTSAFEPOINT // ptr isa jl_value_t*
 {
-    mmtk_gc_wb_full(ptr, (void*)0);
+    mmtk_gc_wb(ptr, (void*)0);
 }
 
 STATIC_INLINE void jl_gc_multi_wb(const void *parent, const jl_value_t *ptr) JL_NOTSAFEPOINT
 {
-    mmtk_gc_wb_full(parent, (void*)0);
+    mmtk_gc_wb(parent, (void*)0);
 }
 #endif // MMTK_GC
 
@@ -2284,11 +2282,38 @@ extern JL_DLLEXPORT int jl_default_debug_info_kind;
 
 #ifdef MMTK_GC
 extern void mmtk_object_reference_write_post(void* mutator, const void* parent, const void* ptr);
+extern void mmtk_object_reference_write_slow(void* mutator, const void* parent, const void* ptr);
+extern const uint8_t MMTK_NEEDS_WRITE_BARRIER;
+extern const uint8_t OBJECT_BARRIER;
+extern const void* MMTK_SIDE_LOG_BIT_BASE_ADDRESS;
+
+// Directly call into MMTk for write barrier (debugging only)
 STATIC_INLINE void mmtk_gc_wb_full(const void *parent, const void *ptr) JL_NOTSAFEPOINT
 {
     jl_task_t *ct = jl_current_task;
     jl_ptls_t ptls = ct->ptls;
     mmtk_object_reference_write_post(ptls->mmtk_mutator_ptr, parent, ptr);
+}
+
+// Inlined fastpath
+STATIC_INLINE void mmtk_gc_wb_fast(const void *parent, const void *ptr) JL_NOTSAFEPOINT
+{
+    if (MMTK_NEEDS_WRITE_BARRIER == OBJECT_BARRIER) {
+        intptr_t addr = (intptr_t) (void*) parent;
+        uint8_t* meta_addr = (uint8_t*) (MMTK_SIDE_LOG_BIT_BASE_ADDRESS) + (addr >> 6);
+        intptr_t shift = (addr >> 3) & 0b111;
+        uint8_t byte_val = *meta_addr;
+        if (((byte_val >> shift) & 1) == 1) {
+            jl_task_t *ct = jl_current_task;
+            jl_ptls_t ptls = ct->ptls;
+            mmtk_object_reference_write_slow(ptls->mmtk_mutator_ptr, parent, ptr);
+        }
+    }
+}
+
+STATIC_INLINE void mmtk_gc_wb(const void *parent, const void *ptr) JL_NOTSAFEPOINT
+{
+    mmtk_gc_wb_fast(parent, ptr);
 }
 #endif
 

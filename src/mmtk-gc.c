@@ -501,6 +501,13 @@ JL_DLLEXPORT void jl_gc_wb2_noinline(const void *parent, const void *ptr) JL_NOT
     jl_gc_wb(parent, ptr);
 }
 
+JL_DLLEXPORT void jl_gc_wb_slow(const void *parent, const void *ptr) JL_NOTSAFEPOINT
+{
+    jl_task_t *ct = jl_current_task;
+    jl_ptls_t ptls = ct->ptls;
+    mmtk_object_reference_write_slow(ptls->mmtk_mutator_ptr, parent, ptr);
+}
+
 void *jl_gc_perm_alloc_nolock(size_t sz, int zero, unsigned align, unsigned offset)
 {
     jl_ptls_t ptls = jl_current_task->ptls;
