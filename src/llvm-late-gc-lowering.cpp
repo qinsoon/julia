@@ -2537,6 +2537,9 @@ bool LateLowerGCFrame::CleanupIR(Function &F, State *S, bool *CFGModified) {
             assert(false);
         }
 #else
+        // FIXME: Currently we call write barrier with the src object (parent).
+        // This works fine for object barrier for generational plans (such as stickyimmix), which does not use the target object at all.
+        // But for other MMTk plans, we need to be careful.
         const bool INLINE_WRITE_BARRIER = true;
         if (CI->getCalledOperand() == write_barrier_func) {
             if (MMTK_NEEDS_WRITE_BARRIER == OBJECT_BARRIER) {
@@ -2548,16 +2551,17 @@ bool LateLowerGCFrame::CleanupIR(Function &F, State *S, bool *CFGModified) {
                     // uint8_t* meta_addr = (uint8_t*) (SIDE_METADATA_BASE_ADDRESS + (addr >> 6));
                     intptr_t metadata_base_address = reinterpret_cast<intptr_t>(MMTK_SIDE_LOG_BIT_BASE_ADDRESS);
                     auto metadata_base_val = ConstantInt::get(intptr_ty, metadata_base_address);
-                    auto parent_val = builder.CreateBitCast(parent, intptr_ty);
+                    auto metadata_base_ptr = ConstantExpr::getIntToPtr(metadata_base_val, PointerType::get(i8_ty, 0));
+
+                    auto parent_val = builder.CreatePtrToInt(parent, intptr_ty);
                     auto shr = builder.CreateLShr(parent_val, ConstantInt::get(intptr_ty, 6));
-                    auto metadata_addr_val = builder.CreateNSWAdd(metadata_base_val, shr);
+                    auto metadata_ptr = builder.CreateGEP(i8_ty, metadata_base_ptr, shr);
 
                     // intptr_t shift = (addr >> 3) & 0b111;
                     auto shift = builder.CreateAnd(builder.CreateLShr(parent_val, ConstantInt::get(intptr_ty, 3)), ConstantInt::get(intptr_ty, 7));
                     auto shift_i8 = builder.CreateTruncOrBitCast(shift, i8_ty);
 
                     // uint8_t byte_val = *meta_addr;
-                    auto metadata_ptr = builder.CreateBitCast(metadata_addr_val, PointerType::get(i8_ty, 0));
                     auto load_i8 = builder.CreateAlignedLoad(i8_ty, metadata_ptr, Align());
 
                     // // if (((byte_val >> shift) & 1) == 1) {
@@ -2566,18 +2570,18 @@ bool LateLowerGCFrame::CleanupIR(Function &F, State *S, bool *CFGModified) {
                     auto is_unlogged = builder.CreateICmpEQ(masked, ConstantInt::get(i8_ty, 1));
 
                     // //     object_reference_write_slow_call((void*) src, (void*) slot, (void*) target);
-                    MDBuilder MDB(parent->getContext());
+                    MDBuilder MDB(F.getContext());
                     SmallVector<uint32_t, 2> Weights{1, 9};
                     auto mayTriggerSlowpath = SplitBlockAndInsertIfThen(is_unlogged, CI, false, MDB.createBranchWeights(Weights));
                     builder.SetInsertPoint(mayTriggerSlowpath);
-                    auto target = ConstantInt::get(T_size, 0);
-                    builder.CreateCall(getOrDeclare(jl_intrinsics::writeBarrierSlow), { parent, target });
+                    builder.CreateCall(getOrDeclare(jl_intrinsics::writeBarrier1Slow), { parent });
                 } else {
-                    // FIXME: We only care about parent
                     Function *wb_func = getOrDeclare(jl_intrinsics::writeBarrier1);
                     builder.CreateCall(wb_func, { parent });
                 }
             }
+        } else {
+            assert(false);
         }
 #endif
 
