@@ -2564,12 +2564,12 @@ bool LateLowerGCFrame::CleanupIR(Function &F, State *S, bool *CFGModified) {
                     // uint8_t byte_val = *meta_addr;
                     auto load_i8 = builder.CreateAlignedLoad(i8_ty, metadata_ptr, Align());
 
-                    // // if (((byte_val >> shift) & 1) == 1) {
+                    // if (((byte_val >> shift) & 1) == 1) {
                     auto shifted_load_i8 = builder.CreateLShr(load_i8, shift_i8);
                     auto masked = builder.CreateAnd(shifted_load_i8, ConstantInt::get(i8_ty, 1));
                     auto is_unlogged = builder.CreateICmpEQ(masked, ConstantInt::get(i8_ty, 1));
 
-                    // //     object_reference_write_slow_call((void*) src, (void*) slot, (void*) target);
+                    // object_reference_write_slow_call((void*) src, (void*) slot, (void*) target);
                     MDBuilder MDB(F.getContext());
                     SmallVector<uint32_t, 2> Weights{1, 9};
                     auto mayTriggerSlowpath = SplitBlockAndInsertIfThen(is_unlogged, CI, false, MDB.createBranchWeights(Weights));

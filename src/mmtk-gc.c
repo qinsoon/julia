@@ -192,14 +192,12 @@ void jl_gc_free_array(jl_array_t *a) JL_NOTSAFEPOINT
 
 JL_DLLEXPORT void jl_gc_queue_root(const jl_value_t *ptr)
 {
-    /* TODO: not needed? */
     unreachable();
 }
 
 // TODO: exported, but not MMTk-specific?
 JL_DLLEXPORT void jl_gc_queue_multiroot(const jl_value_t *parent, const jl_value_t *ptr) JL_NOTSAFEPOINT
 {
-    /* TODO: confirm not needed? */
     unreachable();
 }
 
