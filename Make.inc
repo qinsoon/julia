@@ -750,7 +750,14 @@ endif
 MMTK_DIR = ${MMTK_JULIA_DIR}/mmtk
 MMTK_API_INC = $(MMTK_DIR)/api
 MMTK_JULIA_INC = ${MMTK_JULIA_DIR}/julia
-MMTK_LIB := -L$(MMTK_DIR)/target/$(MMTK_BUILD) -lmmtk_julia
+ifeq ($(OS),Linux)
+MMTK_LIB_NAME := libmmtk_julia.so
+else
+$(error "Unsupported OS for MMTk")
+endif
+MMTK_LIB_SRC := $(MMTK_DIR)/target/$(MMTK_BUILD)/$(MMTK_LIB_NAME)
+MMTK_LIB_DST := $(BUILDROOT)/usr/lib/$(MMTK_LIB_NAME)
+MMTK_LIB := -lmmtk_julia
 LDFLAGS += -Wl,-rpath=$(MMTK_DIR)/target/$(MMTK_BUILD)/
 else
 MMTK_JULIA_INC :=
@@ -1692,6 +1699,9 @@ PRINT_PERL = printf '    %b %b\n' $(PERLCOLOR)PERL$(ENDCOLOR) $(BINCOLOR)$(GOAL)
 PRINT_FLISP = printf '    %b %b\n' $(FLISPCOLOR)FLISP$(ENDCOLOR) $(BINCOLOR)$(GOAL)$(ENDCOLOR); $(1)
 PRINT_JULIA = printf '    %b %b\n' $(JULIACOLOR)JULIA$(ENDCOLOR) $(BINCOLOR)$(GOAL)$(ENDCOLOR); $(1)
 PRINT_DTRACE = printf '    %b %b\n' $(DTRACECOLOR)DTRACE$(ENDCOLOR) $(BINCOLOR)$(GOAL)$(ENDCOLOR); $(1)
+ifeq ($(WITH_MMTK), 1)
+PRINT_MMTK = printf '    %b %b\n' $(LINKCOLOR)MMTK$(ENDCOLOR) $(BINCOLOR)$(GOAL)$(ENDCOLOR); $(1)
+endif
 
 else
 QUIET_MAKE =
@@ -1702,6 +1712,9 @@ PRINT_PERL = echo '$(subst ','\'',$(1))'; $(1)
 PRINT_FLISP = echo '$(subst ','\'',$(1))'; $(1)
 PRINT_JULIA = echo '$(subst ','\'',$(1))'; $(1)
 PRINT_DTRACE = echo '$(subst ','\'',$(1))'; $(1)
+ifeq ($(WITH_MMTK), 1)
+PRINT_MMTK = echo '$(subst ','\'',$(1))'; $(1)
+endif
 
 endif
 

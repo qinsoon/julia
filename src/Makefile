@@ -175,7 +175,7 @@ DOBJS := $(SRCS:%=$(BUILDDIR)/%.dbg.obj)
 
 ifeq ($(WITH_MMTK), 1)
 MMTK_SRCS := mmtk_julia
-MMTK_OBJS := $(MMTK_SRCS:%=$(MMTK_JULIA_INC)/%.o)
+MMTK_OBJS := $(MMTK_SRCS:%=$(MMTK_JULIA_INC)/%.o) $(MMTK_LIB_DST)
 MMTK_DOBJS := $(MMTK_SRCS:%=$(MMTK_JULIA_INC)/%.dbg.obj)
 else
 MMTK_OBJS :=
@@ -254,6 +254,8 @@ $(MMTK_JULIA_INC)/%.o: $(MMTK_JULIA_INC)/%.c $(HEADERS) | $(MMTK_JULIA_INC)
 	@$(call PRINT_CC, $(CC) $(JCPPFLAGS) $(JCFLAGS) $(SHIPFLAGS) $(DISABLE_ASSERTIONS) -c $< -o $@)
 $(MMTK_JULIA_INC)/%.dbg.obj: $(MMTK_JULIA_INC)/%.c $(HEADERS) | $(MMTK_JULIA_INC)
 	@$(call PRINT_CC, $(CC) $(JCPPFLAGS) $(JCFLAGS) $(DEBUGFLAGS) -c $< -o $@)
+$(MMTK_LIB_DST): $(MMTK_LIB_SRC)
+	@$(call PRINT_MMTK, cp $< $@)
 endif
 
 # public header rules
