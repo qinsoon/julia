@@ -280,17 +280,32 @@ Value *FinalLowerGC::lowerGCAllocBytes(CallInst *target, Function &F)
         #else // MMTK_GC
             auto pool_osize_i32 = ConstantInt::get(Type::getInt32Ty(F.getContext()), osize);
             auto pool_osize = ConstantInt::get(Type::getInt64Ty(F.getContext()), osize);
-            auto cursor_pos = ConstantInt::get(Type::getInt64Ty(target->getContext()), offsetof(jl_tls_states_t, cursor));
-            auto limit_pos = ConstantInt::get(Type::getInt64Ty(target->getContext()),  offsetof(jl_tls_states_t, limit));
+            
+            // Assuming we use the first immix allocator.
+            // FIXME: We should get the allocator index and type from MMTk. We have only implemented immix fastpath, for other allocators, we should panic
+            // printf("cursor offsets: %ld, %ld, %ld, %ld, %ld\n", 
+            //     offsetof(jl_tls_states_t, mmtk_mutator),
+            //     offsetof(MMTkMutatorContext, allocators),
+            //     offsetof(Allocators, immix),
+            //     offsetof(ImmixAllocator, cursor),
+            //     offsetof(ImmixAllocator, limit)
+            //     );
+            // fflush(stdout);
+            // printf("size: %ld\n", sizeof(MMTkMutatorContext)); fflush(stdout);
+            auto allocator_offset = offsetof(jl_tls_states_t, mmtk_mutator) + offsetof(MMTkMutatorContext, allocators) + offsetof(Allocators, immix);
+
+            auto cursor_pos = ConstantInt::get(Type::getInt64Ty(target->getContext()), allocator_offset + offsetof(ImmixAllocator, cursor));
+            auto limit_pos = ConstantInt::get(Type::getInt64Ty(target->getContext()),  allocator_offset + offsetof(ImmixAllocator, limit));
 
             auto cursor_tls_i8 = builder.CreateGEP(Type::getInt8Ty(target->getContext()), ptls, cursor_pos);
             auto cursor_ptr = builder.CreateBitCast(cursor_tls_i8, PointerType::get(Type::getInt64Ty(target->getContext()), 0), "cursor_ptr");
             auto cursor = builder.CreateLoad(Type::getInt64Ty(target->getContext()), cursor_ptr, "cursor");
 
-
+            // TODO: offset = 8? In jl_mmtk_gc_alloc_default, if the type is jl_buff_tag, the offset is 0.
             auto delta_offset = builder.CreateNSWSub(ConstantInt::get(Type::getInt64Ty(target->getContext()), 0), ConstantInt::get(Type::getInt64Ty(target->getContext()), 8));
             auto delta_cursor = builder.CreateNSWSub(ConstantInt::get(Type::getInt64Ty(target->getContext()), 0), cursor);
             auto delta_op = builder.CreateNSWAdd(delta_offset, delta_cursor);
+            // alignment 16 (15 = 16 - 1)
             auto delta = builder.CreateAnd(delta_op, ConstantInt::get(Type::getInt64Ty(target->getContext()), 15), "delta");
             auto result = builder.CreateNSWAdd(cursor, delta, "result");
 

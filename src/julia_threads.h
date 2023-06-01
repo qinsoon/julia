@@ -282,9 +282,7 @@ typedef struct _jl_tls_states_t {
     )
 
 #ifdef MMTK_GC
-    MMTkMutatorContext* mmtk_mutator_ptr;
-    void* cursor;
-    void* limit;
+    MMTkMutatorContext mmtk_mutator;
 #endif
 
     // some hidden state (usually just because we don't have the type's size declaration)

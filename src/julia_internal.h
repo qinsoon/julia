@@ -25,6 +25,10 @@
 #include <sys/time.h>
 #endif
 
+#ifdef MMTK_GC
+#include "mmtk.h"
+#endif
+
 // pragma visibility is more useful than -fvisibility
 #pragma GCC visibility push(hidden)
 
@@ -550,7 +554,7 @@ STATIC_INLINE jl_value_t *jl_gc_permobj(size_t sz, void *ty) JL_NOTSAFEPOINT
     o->header = tag | GC_OLD_MARKED;
 #ifdef MMTK_GC
     jl_ptls_t ptls = jl_current_task->ptls;
-    mmtk_post_alloc(ptls->mmtk_mutator_ptr, jl_valueof(o), allocsz, 1);
+    mmtk_post_alloc(&ptls->mmtk_mutator, jl_valueof(o), allocsz, 1);
 #endif
     return jl_valueof(o);
 }

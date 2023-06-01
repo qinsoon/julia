@@ -2391,7 +2391,7 @@ STATIC_INLINE void mmtk_gc_wb_full(const void *parent, const void *ptr) JL_NOTSA
 {
     jl_task_t *ct = jl_current_task;
     jl_ptls_t ptls = ct->ptls;
-    mmtk_object_reference_write_post(ptls->mmtk_mutator_ptr, parent, ptr);
+    mmtk_object_reference_write_post(&ptls->mmtk_mutator, parent, ptr);
 }
 
 // Inlined fastpath
@@ -2405,7 +2405,7 @@ STATIC_INLINE void mmtk_gc_wb_fast(const void *parent, const void *ptr) JL_NOTSA
         if (((byte_val >> shift) & 1) == 1) {
             jl_task_t *ct = jl_current_task;
             jl_ptls_t ptls = ct->ptls;
-            mmtk_object_reference_write_slow(ptls->mmtk_mutator_ptr, parent, ptr);
+            mmtk_object_reference_write_slow(&ptls->mmtk_mutator, parent, ptr);
         }
     }
 }
