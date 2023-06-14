@@ -268,6 +268,9 @@ void jl_init_thread_heap(jl_ptls_t ptls)
 
     MMTk_Mutator mmtk_mutator = mmtk_bind_mutator((void *)ptls, ptls->tid);
     memcpy(&ptls->mmtk_mutator, mmtk_mutator, sizeof(MMTkMutatorContext));
+    printf("Memcopy from %p to %p\n", mmtk_mutator, &ptls->mmtk_mutator); fflush(stdout);
+
+    mmtk_post_bind_mutator(&ptls->mmtk_mutator, mmtk_mutator);
 }
 
 // System-wide initialization
