@@ -282,16 +282,7 @@ Value *FinalLowerGC::lowerGCAllocBytes(CallInst *target, Function &F)
             auto pool_osize = ConstantInt::get(Type::getInt64Ty(F.getContext()), osize);
             
             // Assuming we use the first immix allocator.
-            // FIXME: We should get the allocator index and type from MMTk. We have only implemented immix fastpath, for other allocators, we should panic
-            // printf("cursor offsets: %ld, %ld, %ld, %ld, %ld\n", 
-            //     offsetof(jl_tls_states_t, mmtk_mutator),
-            //     offsetof(MMTkMutatorContext, allocators),
-            //     offsetof(Allocators, immix),
-            //     offsetof(ImmixAllocator, cursor),
-            //     offsetof(ImmixAllocator, limit)
-            //     );
-            // fflush(stdout);
-            // printf("size: %ld\n", sizeof(MMTkMutatorContext)); fflush(stdout);
+            // FIXME: We should get the allocator index and type from MMTk.
             auto allocator_offset = offsetof(jl_tls_states_t, mmtk_mutator) + offsetof(MMTkMutatorContext, allocators) + offsetof(Allocators, immix);
 
             auto cursor_pos = ConstantInt::get(Type::getInt64Ty(target->getContext()), allocator_offset + offsetof(ImmixAllocator, cursor));
@@ -301,7 +292,7 @@ Value *FinalLowerGC::lowerGCAllocBytes(CallInst *target, Function &F)
             auto cursor_ptr = builder.CreateBitCast(cursor_tls_i8, PointerType::get(Type::getInt64Ty(target->getContext()), 0), "cursor_ptr");
             auto cursor = builder.CreateLoad(Type::getInt64Ty(target->getContext()), cursor_ptr, "cursor");
 
-            // TODO: offset = 8? In jl_mmtk_gc_alloc_default, if the type is jl_buff_tag, the offset is 0.
+            // offset = 8
             auto delta_offset = builder.CreateNSWSub(ConstantInt::get(Type::getInt64Ty(target->getContext()), 0), ConstantInt::get(Type::getInt64Ty(target->getContext()), 8));
             auto delta_cursor = builder.CreateNSWSub(ConstantInt::get(Type::getInt64Ty(target->getContext()), 0), cursor);
             auto delta_op = builder.CreateNSWAdd(delta_offset, delta_cursor);

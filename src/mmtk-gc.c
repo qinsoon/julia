@@ -266,10 +266,11 @@ void jl_init_thread_heap(jl_ptls_t ptls)
     memset(&ptls->gc_num, 0, sizeof(ptls->gc_num));
     jl_atomic_store_relaxed(&ptls->gc_num.allocd, -(int64_t)gc_num.interval);
 
+    // Create mutator
     MMTk_Mutator mmtk_mutator = mmtk_bind_mutator((void *)ptls, ptls->tid);
+    // Copy the mutator to the thread local storage
     memcpy(&ptls->mmtk_mutator, mmtk_mutator, sizeof(MMTkMutatorContext));
-    printf("Memcopy from %p to %p\n", mmtk_mutator, &ptls->mmtk_mutator); fflush(stdout);
-
+    // Call post_bind to maintain a list of active mutators and to reclaim the old mutator (which is no longer needed)
     mmtk_post_bind_mutator(&ptls->mmtk_mutator, mmtk_mutator);
 }
 
