@@ -280,7 +280,7 @@ Value *FinalLowerGC::lowerGCAllocBytes(CallInst *target, Function &F)
         #else // MMTK_GC
             auto pool_osize_i32 = ConstantInt::get(Type::getInt32Ty(F.getContext()), osize);
             auto pool_osize = ConstantInt::get(Type::getInt64Ty(F.getContext()), osize);
-            
+
             // Assuming we use the first immix allocator.
             // FIXME: We should get the allocator index and type from MMTk.
             auto allocator_offset = offsetof(jl_tls_states_t, mmtk_mutator) + offsetof(MMTkMutatorContext, allocators) + offsetof(Allocators, immix);
