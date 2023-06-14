@@ -25,10 +25,6 @@
 #include <sys/time.h>
 #endif
 
-#ifdef MMTK_GC
-#include "mmtk.h"
-#endif
-
 // pragma visibility is more useful than -fvisibility
 #pragma GCC visibility push(hidden)
 
