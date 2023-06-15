@@ -274,6 +274,11 @@ void jl_init_thread_heap(jl_ptls_t ptls)
     mmtk_post_bind_mutator(&ptls->mmtk_mutator, mmtk_mutator);
 }
 
+void jl_deinit_thread_heap(jl_ptls_t ptls)
+{
+    mmtk_destroy_mutator(&ptls->mmtk_mutator);
+}
+
 // System-wide initialization
 // TODO: remove locks? remove anything else?
 void jl_gc_init(void)

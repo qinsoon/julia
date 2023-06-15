@@ -478,6 +478,9 @@ static void jl_delete_thread(void *value) JL_NOTSAFEPOINT_ENTER
 #else
     pthread_mutex_unlock(&in_signal_lock);
 #endif
+
+    jl_deinit_thread_heap(ptls);
+
     // then park in safe-region
     (void)jl_gc_safe_enter(ptls);
 }
