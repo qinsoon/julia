@@ -339,10 +339,12 @@ jl_value_t *jl_gc_pool_alloc_noinline(jl_ptls_t ptls, int pool_offset,
                                    int osize);
 jl_value_t *jl_gc_big_alloc_noinline(jl_ptls_t ptls, size_t allocsz);
 #ifdef MMTK_GC
-JL_DLLIMPORT jl_value_t *jl_mmtk_gc_alloc_default(jl_ptls_t ptls, int pool_offset, int osize, void* ty);
+JL_DLLIMPORT jl_value_t *jl_mmtk_gc_alloc_default(jl_ptls_t ptls, size_t allocsz, void* ty);
 JL_DLLIMPORT jl_value_t *jl_mmtk_gc_alloc_big(jl_ptls_t ptls, size_t allocsz);
 JL_DLLIMPORT extern void mmtk_post_alloc(void* mutator, void* obj, size_t bytes, int allocator);
 JL_DLLIMPORT extern void mmtk_initialize_collection(void* tls);
+JL_DLLIMPORT extern size_t MAX_STANDARD_OBJECT_SIZE;
+JL_DLLIMPORT extern size_t mmtk_align_alloc_size(size_t sz);
 #endif // MMTK_GC
 JL_DLLEXPORT int jl_gc_classify_pools(size_t sz, int *osize) JL_NOTSAFEPOINT;
 extern uv_mutex_t gc_perm_lock;
@@ -493,16 +495,26 @@ STATIC_INLINE jl_value_t *jl_gc_alloc_(jl_ptls_t ptls, size_t sz, void *ty)
 {
     jl_value_t *v;
     const size_t allocsz = sz + sizeof(jl_taggedvalue_t);
-    if (sz <= GC_MAX_SZCLASS) {
-        int pool_id = jl_gc_szclass(allocsz);
-        int osize = jl_gc_sizeclasses[pool_id];
-        v = jl_mmtk_gc_alloc_default(ptls, pool_id, osize, ty);
-    }
-    else {
-        if (allocsz < sz) // overflow in adding offs, size was "negative"
-            jl_throw(jl_memory_exception);
+
+    if (allocsz < sz) // overflow in adding offs, size was "negative"
+        jl_throw(jl_memory_exception);
+
+    if (allocsz < (MAX_STANDARD_OBJECT_SIZE - 8)) { // buffer may take 8 bytes extra
+        v = jl_mmtk_gc_alloc_default(ptls, allocsz, ty);
+    } else {
         v = jl_mmtk_gc_alloc_big(ptls, allocsz);
     }
+
+    // if (sz <= GC_MAX_SZCLASS) {
+    //     int pool_id = jl_gc_szclass(allocsz);
+    //     int osize = jl_gc_sizeclasses[pool_id];
+    //     v = jl_mmtk_gc_alloc_default(ptls, pool_id, osize, ty);
+    // }
+    // else {
+    //     if (allocsz < sz) // overflow in adding offs, size was "negative"
+    //         jl_throw(jl_memory_exception);
+    //     v = jl_mmtk_gc_alloc_big(ptls, allocsz);
+    // }
     jl_set_typeof(v, ty);
     maybe_record_alloc_to_profile(v, sz, (jl_datatype_t*)ty);
     return v;

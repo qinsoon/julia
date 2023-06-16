@@ -263,6 +263,8 @@ Value *FinalLowerGC::lowerGCAllocBytes(CallInst *target, Function &F)
     if (auto CI = dyn_cast<ConstantInt>(target->getArgOperand(1))) {
         size_t sz = (size_t)CI->getZExtValue();
         // This is strongly architecture and OS dependent
+
+#ifndef MMTK_GC
         int osize;
         int offset = jl_gc_classify_pools(sz, &osize);
         if (offset < 0) {
@@ -270,14 +272,37 @@ Value *FinalLowerGC::lowerGCAllocBytes(CallInst *target, Function &F)
                 bigAllocFunc,
                 { ptls, ConstantInt::get(T_size, sz + sizeof(void*)) });
             derefAttr = Attribute::getWithDereferenceableBytes(F.getContext(), sz + sizeof(void*));
-        }
-        else {
-        #ifndef MMTK_GC
+        } else {
             auto pool_offs = ConstantInt::get(Type::getInt32Ty(F.getContext()), offset);
             auto pool_osize = ConstantInt::get(Type::getInt32Ty(F.getContext()), osize);
             newI = builder.CreateCall(poolAllocFunc, { ptls, pool_offs, pool_osize });
             derefAttr = Attribute::getWithDereferenceableBytes(F.getContext(), osize);
-        #else // MMTK_GC
+            } else {
+                auto size = builder.CreateZExtOrTrunc(target->getArgOperand(1), T_size);
+                size = builder.CreateAdd(size, ConstantInt::get(T_size, sizeof(void*)));
+                newI = builder.CreateCall(allocTypedFunc, { ptls, size, ConstantPointerNull::get(Type::getInt8PtrTy(F.getContext())) });
+                derefAttr = Attribute::getWithDereferenceableBytes(F.getContext(), sizeof(void*));
+            }
+
+            newI->setAttributes(newI->getCalledFunction()->getAttributes());
+            newI->addRetAttr(derefAttr);
+            newI->takeName(target);
+            return newI;
+        }
+#else // MMTK_GC
+        // auto pool_osize_i32 = ConstantInt::get(Type::getInt32Ty(F.getContext()), osize);
+        // auto pool_osize = ConstantInt::get(Type::getInt64Ty(F.getContext()), osize);
+        if (sz + sizeof(void*) >= MAX_STANDARD_OBJECT_SIZE) {
+            newI = builder.CreateCall(
+                    bigAllocFunc,
+                    { ptls, ConstantInt::get(T_size, sz + sizeof(void*)) });
+
+            newI->setAttributes(newI->getCalledFunction()->getAttributes());
+            newI->addRetAttr(derefAttr);
+            newI->takeName(target);
+            return newI;
+        } else {
+            auto osize = mmtk_align_alloc_size(sz + sizeof(void*));
             auto pool_osize_i32 = ConstantInt::get(Type::getInt32Ty(F.getContext()), osize);
             auto pool_osize = ConstantInt::get(Type::getInt64Ty(F.getContext()), osize);
 
@@ -349,19 +374,19 @@ Value *FinalLowerGC::lowerGCAllocBytes(CallInst *target, Function &F)
             phiNode->takeName(target);
 
             return phiNode;
-        #endif // MMTK_GC
         }
+#endif // MMTK_GC
     } else {
         auto size = builder.CreateZExtOrTrunc(target->getArgOperand(1), T_size);
         size = builder.CreateAdd(size, ConstantInt::get(T_size, sizeof(void*)));
         newI = builder.CreateCall(allocTypedFunc, { ptls, size, ConstantPointerNull::get(Type::getInt8PtrTy(F.getContext())) });
         derefAttr = Attribute::getWithDereferenceableBytes(F.getContext(), sizeof(void*));
-    }
 
-    newI->setAttributes(newI->getCalledFunction()->getAttributes());
-    newI->addRetAttr(derefAttr);
-    newI->takeName(target);
-    return newI;
+        newI->setAttributes(newI->getCalledFunction()->getAttributes());
+        newI->addRetAttr(derefAttr);
+        newI->takeName(target);
+        return newI;
+    }
 }
 
 bool FinalLowerGC::doInitialization(Module &M) {
