@@ -277,19 +277,15 @@ Value *FinalLowerGC::lowerGCAllocBytes(CallInst *target, Function &F)
             auto pool_osize = ConstantInt::get(Type::getInt32Ty(F.getContext()), osize);
             newI = builder.CreateCall(poolAllocFunc, { ptls, pool_offs, pool_osize });
             derefAttr = Attribute::getWithDereferenceableBytes(F.getContext(), osize);
-            } else {
-                auto size = builder.CreateZExtOrTrunc(target->getArgOperand(1), T_size);
-                size = builder.CreateAdd(size, ConstantInt::get(T_size, sizeof(void*)));
-                newI = builder.CreateCall(allocTypedFunc, { ptls, size, ConstantPointerNull::get(Type::getInt8PtrTy(F.getContext())) });
-                derefAttr = Attribute::getWithDereferenceableBytes(F.getContext(), sizeof(void*));
-            }
-
-            newI->setAttributes(newI->getCalledFunction()->getAttributes());
-            newI->addRetAttr(derefAttr);
-            newI->takeName(target);
-            return newI;
         }
+
+        newI->setAttributes(newI->getCalledFunction()->getAttributes());
+        newI->addRetAttr(derefAttr);
+        newI->takeName(target);
+        return newI;
 #else // MMTK_GC
+        const bool INLINE_FASTPATH = false;
+
         // auto pool_osize_i32 = ConstantInt::get(Type::getInt32Ty(F.getContext()), osize);
         // auto pool_osize = ConstantInt::get(Type::getInt64Ty(F.getContext()), osize);
         if (sz + sizeof(void*) >= MAX_STANDARD_OBJECT_SIZE) {
@@ -302,78 +298,92 @@ Value *FinalLowerGC::lowerGCAllocBytes(CallInst *target, Function &F)
             newI->takeName(target);
             return newI;
         } else {
-            auto osize = mmtk_align_alloc_size(sz + sizeof(void*));
-            auto pool_osize_i32 = ConstantInt::get(Type::getInt32Ty(F.getContext()), osize);
-            auto pool_osize = ConstantInt::get(Type::getInt64Ty(F.getContext()), osize);
+            if (INLINE_FASTPATH) {
+                auto osize = mmtk_align_alloc_size(sz + sizeof(void*));
+                auto pool_osize_i32 = ConstantInt::get(Type::getInt32Ty(F.getContext()), osize);
+                auto pool_osize = ConstantInt::get(Type::getInt64Ty(F.getContext()), osize);
 
-            // Assuming we use the first immix allocator.
-            // FIXME: We should get the allocator index and type from MMTk.
-            auto allocator_offset = offsetof(jl_tls_states_t, mmtk_mutator) + offsetof(MMTkMutatorContext, allocators) + offsetof(Allocators, immix);
+                // Assuming we use the first immix allocator.
+                // FIXME: We should get the allocator index and type from MMTk.
+                auto allocator_offset = offsetof(jl_tls_states_t, mmtk_mutator) + offsetof(MMTkMutatorContext, allocators) + offsetof(Allocators, immix);
 
-            auto cursor_pos = ConstantInt::get(Type::getInt64Ty(target->getContext()), allocator_offset + offsetof(ImmixAllocator, cursor));
-            auto limit_pos = ConstantInt::get(Type::getInt64Ty(target->getContext()),  allocator_offset + offsetof(ImmixAllocator, limit));
+                auto cursor_pos = ConstantInt::get(Type::getInt64Ty(target->getContext()), allocator_offset + offsetof(ImmixAllocator, cursor));
+                auto limit_pos = ConstantInt::get(Type::getInt64Ty(target->getContext()),  allocator_offset + offsetof(ImmixAllocator, limit));
 
-            auto cursor_tls_i8 = builder.CreateGEP(Type::getInt8Ty(target->getContext()), ptls, cursor_pos);
-            auto cursor_ptr = builder.CreateBitCast(cursor_tls_i8, PointerType::get(Type::getInt64Ty(target->getContext()), 0), "cursor_ptr");
-            auto cursor = builder.CreateLoad(Type::getInt64Ty(target->getContext()), cursor_ptr, "cursor");
+                auto cursor_tls_i8 = builder.CreateGEP(Type::getInt8Ty(target->getContext()), ptls, cursor_pos);
+                auto cursor_ptr = builder.CreateBitCast(cursor_tls_i8, PointerType::get(Type::getInt64Ty(target->getContext()), 0), "cursor_ptr");
+                auto cursor = builder.CreateLoad(Type::getInt64Ty(target->getContext()), cursor_ptr, "cursor");
 
-            // offset = 8
-            auto delta_offset = builder.CreateNSWSub(ConstantInt::get(Type::getInt64Ty(target->getContext()), 0), ConstantInt::get(Type::getInt64Ty(target->getContext()), 8));
-            auto delta_cursor = builder.CreateNSWSub(ConstantInt::get(Type::getInt64Ty(target->getContext()), 0), cursor);
-            auto delta_op = builder.CreateNSWAdd(delta_offset, delta_cursor);
-            // alignment 16 (15 = 16 - 1)
-            auto delta = builder.CreateAnd(delta_op, ConstantInt::get(Type::getInt64Ty(target->getContext()), 15), "delta");
-            auto result = builder.CreateNSWAdd(cursor, delta, "result");
+                // offset = 8
+                auto delta_offset = builder.CreateNSWSub(ConstantInt::get(Type::getInt64Ty(target->getContext()), 0), ConstantInt::get(Type::getInt64Ty(target->getContext()), 8));
+                auto delta_cursor = builder.CreateNSWSub(ConstantInt::get(Type::getInt64Ty(target->getContext()), 0), cursor);
+                auto delta_op = builder.CreateNSWAdd(delta_offset, delta_cursor);
+                // alignment 16 (15 = 16 - 1)
+                auto delta = builder.CreateAnd(delta_op, ConstantInt::get(Type::getInt64Ty(target->getContext()), 15), "delta");
+                auto result = builder.CreateNSWAdd(cursor, delta, "result");
 
-            auto new_cursor = builder.CreateNSWAdd(result, pool_osize);
+                auto new_cursor = builder.CreateNSWAdd(result, pool_osize);
 
-            auto limit_tls_i8 = builder.CreateGEP(Type::getInt8Ty(target->getContext()), ptls, limit_pos);
-            auto limit_ptr = builder.CreateBitCast(limit_tls_i8, PointerType::get(Type::getInt64Ty(target->getContext()), 0), "limit_ptr");
-            auto limit = builder.CreateLoad(Type::getInt64Ty(target->getContext()), limit_ptr, "limit");
+                auto limit_tls_i8 = builder.CreateGEP(Type::getInt8Ty(target->getContext()), ptls, limit_pos);
+                auto limit_ptr = builder.CreateBitCast(limit_tls_i8, PointerType::get(Type::getInt64Ty(target->getContext()), 0), "limit_ptr");
+                auto limit = builder.CreateLoad(Type::getInt64Ty(target->getContext()), limit_ptr, "limit");
 
-            auto gt_limit = builder.CreateICmpSGT(new_cursor, limit);
+                auto gt_limit = builder.CreateICmpSGT(new_cursor, limit);
 
-            auto current_block = target->getParent();
-            builder.SetInsertPoint(target->getNextNode());
-            auto phiNode = builder.CreatePHI(poolAllocFunc->getReturnType(), 2, "phi_fast_slow");
-            auto top_cont = current_block->splitBasicBlock(target->getNextNode(), "top_cont");
+                auto current_block = target->getParent();
+                builder.SetInsertPoint(target->getNextNode());
+                auto phiNode = builder.CreatePHI(poolAllocFunc->getReturnType(), 2, "phi_fast_slow");
+                auto top_cont = current_block->splitBasicBlock(target->getNextNode(), "top_cont");
 
-            auto slowpath = BasicBlock::Create(target->getContext(), "slowpath", target->getFunction());
-            auto fastpath = BasicBlock::Create(target->getContext(), "fastpath", target->getFunction(), top_cont);
+                auto slowpath = BasicBlock::Create(target->getContext(), "slowpath", target->getFunction());
+                auto fastpath = BasicBlock::Create(target->getContext(), "fastpath", target->getFunction(), top_cont);
 
-            auto next_br = current_block->getTerminator();
-            next_br->eraseFromParent();
-            builder.SetInsertPoint(current_block);
-            builder.CreateCondBr(gt_limit, slowpath, fastpath);
+                auto next_br = current_block->getTerminator();
+                next_br->eraseFromParent();
+                builder.SetInsertPoint(current_block);
+                builder.CreateCondBr(gt_limit, slowpath, fastpath);
 
-            // slowpath
-            builder.SetInsertPoint(slowpath);
-            auto pool_offs = ConstantInt::get(Type::getInt32Ty(F.getContext()), 1);
-            auto new_call = builder.CreateCall(poolAllocFunc, { ptls, pool_offs, pool_osize_i32 });
-            new_call->setAttributes(new_call->getCalledFunction()->getAttributes());
-            builder.CreateBr(top_cont);
+                // slowpath
+                builder.SetInsertPoint(slowpath);
+                auto pool_offs = ConstantInt::get(Type::getInt32Ty(F.getContext()), 1);
+                auto new_call = builder.CreateCall(poolAllocFunc, { ptls, pool_offs, pool_osize_i32 });
+                new_call->setAttributes(new_call->getCalledFunction()->getAttributes());
+                builder.CreateBr(top_cont);
 
-            // // fastpath
-            builder.SetInsertPoint(fastpath);
-            builder.CreateStore(new_cursor, cursor_ptr);
+                // // fastpath
+                builder.SetInsertPoint(fastpath);
+                builder.CreateStore(new_cursor, cursor_ptr);
 
-            // ptls->gc_num.allocd += osize;
-            auto pool_alloc_pos = ConstantInt::get(Type::getInt64Ty(target->getContext()), offsetof(jl_tls_states_t, gc_num));
-            auto pool_alloc_i8 = builder.CreateGEP(Type::getInt8Ty(target->getContext()), ptls, pool_alloc_pos);
-            auto pool_alloc_tls = builder.CreateBitCast(pool_alloc_i8, PointerType::get(Type::getInt64Ty(target->getContext()), 0), "pool_alloc");
-            auto pool_allocd = builder.CreateLoad(Type::getInt64Ty(target->getContext()), pool_alloc_tls);
-            auto pool_allocd_total = builder.CreateAdd(pool_allocd, pool_osize);
-            builder.CreateStore(pool_allocd_total, pool_alloc_tls);
+                // ptls->gc_num.allocd += osize;
+                auto pool_alloc_pos = ConstantInt::get(Type::getInt64Ty(target->getContext()), offsetof(jl_tls_states_t, gc_num));
+                auto pool_alloc_i8 = builder.CreateGEP(Type::getInt8Ty(target->getContext()), ptls, pool_alloc_pos);
+                auto pool_alloc_tls = builder.CreateBitCast(pool_alloc_i8, PointerType::get(Type::getInt64Ty(target->getContext()), 0), "pool_alloc");
+                auto pool_allocd = builder.CreateLoad(Type::getInt64Ty(target->getContext()), pool_alloc_tls);
+                auto pool_allocd_total = builder.CreateAdd(pool_allocd, pool_osize);
+                builder.CreateStore(pool_allocd_total, pool_alloc_tls);
 
-            auto v_raw = builder.CreateNSWAdd(result, ConstantInt::get(Type::getInt64Ty(target->getContext()), sizeof(jl_taggedvalue_t)));
-            auto v_as_ptr = builder.CreateIntToPtr(v_raw, poolAllocFunc->getReturnType());
-            builder.CreateBr(top_cont);
+                auto v_raw = builder.CreateNSWAdd(result, ConstantInt::get(Type::getInt64Ty(target->getContext()), sizeof(jl_taggedvalue_t)));
+                auto v_as_ptr = builder.CreateIntToPtr(v_raw, poolAllocFunc->getReturnType());
+                builder.CreateBr(top_cont);
 
-            phiNode->addIncoming(new_call, slowpath);
-            phiNode->addIncoming(v_as_ptr, fastpath);
-            phiNode->takeName(target);
+                phiNode->addIncoming(new_call, slowpath);
+                phiNode->addIncoming(v_as_ptr, fastpath);
+                phiNode->takeName(target);
 
-            return phiNode;
+                return phiNode;
+            } else {
+                auto pool_offs = ConstantInt::get(Type::getInt32Ty(F.getContext()), 1);
+                auto osize = mmtk_align_alloc_size(sz + sizeof(void*));
+                auto pool_osize_i32 = ConstantInt::get(Type::getInt32Ty(F.getContext()), osize);
+                newI = builder.CreateCall(
+                        poolAllocFunc,
+                        { ptls, pool_offs, pool_osize_i32 });
+
+                newI->setAttributes(newI->getCalledFunction()->getAttributes());
+                newI->addRetAttr(derefAttr);
+                newI->takeName(target);
+                return newI;
+            }
         }
 #endif // MMTK_GC
     } else {
