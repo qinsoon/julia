@@ -505,11 +505,11 @@ JL_DLLEXPORT jl_value_t *jl_alloc_string(size_t len)
 #else
     if (allocsz < sz) // overflow in adding offs, size was "negative"
         jl_throw(jl_memory_exception);
-
-    if (allocsz < MAX_STANDARD_OBJECT_SIZE) {
-        s = jl_mmtk_gc_alloc_default(ptls, allocsz, jl_string_type);
+    size_t mmtk_allocsz = mmtk_align_alloc_size(allocsz);
+    if (mmtk_allocsz < MAX_STANDARD_OBJECT_SIZE) {
+        s = jl_mmtk_gc_alloc_default(ptls, mmtk_allocsz, jl_string_type);
     } else {
-        s = jl_mmtk_gc_alloc_big(ptls, allocsz);
+        s = jl_mmtk_gc_alloc_big(ptls, mmtk_allocsz);
     }
         // int pool_id = jl_gc_szclass_align8(allocsz);
         // int osize = jl_gc_sizeclasses[pool_id];
