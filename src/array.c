@@ -165,6 +165,7 @@ static jl_array_t *_new_array_(jl_value_t *atype, uint32_t ndims, size_t *dims,
             adims[i] = dims[i];
     }
 
+    // printf("Allocate array %p with size %ld\n", a, tsz); fflush(stdout);
     return a;
 }
 
@@ -702,6 +703,7 @@ static int NOINLINE array_resize_buffer(jl_array_t *a, size_t newlen)
         }
         else {
             a->data = jl_gc_alloc_buf(ct->ptls, nbytes);
+            // printf("%p->flags.how is changed from %d to 1\n", a, a->flags.how); fflush(stdout);
             a->flags.how = 1;
             jl_gc_wb_buf(a, a->data, nbytes);
         }

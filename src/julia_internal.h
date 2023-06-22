@@ -499,10 +499,11 @@ STATIC_INLINE jl_value_t *jl_gc_alloc_(jl_ptls_t ptls, size_t sz, void *ty)
     if (allocsz < sz) // overflow in adding offs, size was "negative"
         jl_throw(jl_memory_exception);
 
-    if (allocsz < (MAX_STANDARD_OBJECT_SIZE - 8)) { // buffer may take 8 bytes extra
-        v = jl_mmtk_gc_alloc_default(ptls, allocsz, ty);
+    size_t aligned_sz = mmtk_align_alloc_size(allocsz);
+    if (aligned_sz < (MAX_STANDARD_OBJECT_SIZE - 8)) { // buffer may take 8 bytes extra
+        v = jl_mmtk_gc_alloc_default(ptls, aligned_sz, ty);
     } else {
-        v = jl_mmtk_gc_alloc_big(ptls, allocsz);
+        v = jl_mmtk_gc_alloc_big(ptls, aligned_sz);
     }
 
     // if (sz <= GC_MAX_SZCLASS) {
