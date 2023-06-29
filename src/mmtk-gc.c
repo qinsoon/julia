@@ -546,7 +546,8 @@ JL_DLLEXPORT void jl_gc_wb2_slow(const void *parent, const void* ptr) JL_NOTSAFE
 void *jl_gc_perm_alloc_nolock(size_t sz, int zero, unsigned align, unsigned offset)
 {
     jl_ptls_t ptls = jl_current_task->ptls;
-    void* addr = mmtk_alloc(&ptls->mmtk_mutator, sz, align, offset, 1);
+    size_t allocsz = mmtk_align_alloc_sz(sz);
+    void* addr = mmtk_alloc(&ptls->mmtk_mutator, allocsz, align, offset, 1);
     return addr;
 }
 

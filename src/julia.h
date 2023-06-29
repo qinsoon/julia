@@ -2414,6 +2414,14 @@ STATIC_INLINE void mmtk_gc_wb(const void *parent, const void *ptr) JL_NOTSAFEPOI
 {
     mmtk_gc_wb_fast(parent, ptr);
 }
+
+#define MMTK_MIN_ALIGNMENT 4
+// MMTk assumes allocation size is aligned to min alignment.
+STATIC_INLINE size_t mmtk_align_alloc_sz(size_t sz) JL_NOTSAFEPOINT
+{
+    return (sz + MMTK_MIN_ALIGNMENT - 1) & ~(MMTK_MIN_ALIGNMENT - 1);
+}
+
 #endif
 
 #ifdef __cplusplus
