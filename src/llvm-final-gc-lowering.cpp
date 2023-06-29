@@ -357,6 +357,7 @@ Value *FinalLowerGC::lowerGCAllocBytes(CallInst *target, Function &F)
             } else {
                 auto pool_offs = ConstantInt::get(Type::getInt32Ty(F.getContext()), 1);
                 newI = builder.CreateCall(poolAllocFunc, { ptls, pool_offs, pool_osize_i32 });
+                derefAttr = Attribute::getWithDereferenceableBytes(F.getContext(), osize);
             }
         #endif // MMTK_GC
         }
