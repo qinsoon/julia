@@ -283,7 +283,7 @@ Value *FinalLowerGC::lowerGCAllocBytes(CallInst *target, Function &F)
 
             // Should we generate fastpath allocation sequence here? We should always generate fastpath here for MMTk.
             // Setting this to false will increase allocation overhead a lot, and should only be used for debugging.
-            const bool INLINE_FASTPATH_ALLOCATION = false;
+            const bool INLINE_FASTPATH_ALLOCATION = true;
 
             if (INLINE_FASTPATH_ALLOCATION) {
                 // Assuming we use the first immix allocator.
