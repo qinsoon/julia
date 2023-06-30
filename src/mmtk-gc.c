@@ -33,7 +33,24 @@ JL_DLLEXPORT void jl_gc_set_cb_notify_external_free(jl_gc_cb_notify_external_fre
 
 inline void maybe_collect(jl_ptls_t ptls)
 {
-    mmtk_gc_poll(ptls);
+    // Just do a safe point for general maybe_collect
+    jl_gc_safepoint_(ptls);
+}
+
+// This is only used for malloc. We need to know if we need to do GC. However, keeping checking with MMTk (mmtk_gc_poll),
+// is expensive. So we only check for every few allocations.
+static inline void malloc_maybe_collect(jl_ptls_t ptls, size_t sz)
+{
+    // We do not need to carefully maintain malloc_sz_since_last_poll. We just need to
+    // avoid using mmtk_gc_poll too frequently, and try to be precise on our heap usage
+    // as much as we can.
+    if (ptls->malloc_sz_since_last_poll > 4096) {
+        jl_atomic_store_relaxed(&ptls->malloc_sz_since_last_poll, 0);
+        mmtk_gc_poll(ptls);
+    } else {
+        jl_atomic_fetch_add_relaxed(&ptls->malloc_sz_since_last_poll, sz);
+        jl_gc_safepoint_(ptls);
+    }
 }
 
 
@@ -266,6 +283,9 @@ void jl_init_thread_heap(jl_ptls_t ptls)
     memset(&ptls->gc_num, 0, sizeof(ptls->gc_num));
     jl_atomic_store_relaxed(&ptls->gc_num.allocd, -(int64_t)gc_num.interval);
 
+    // Clear the malloc sz count
+    jl_atomic_store_relaxed(&ptls->malloc_sz_since_last_poll, 0);
+
     // Create mutator
     MMTk_Mutator mmtk_mutator = mmtk_bind_mutator((void *)ptls, ptls->tid);
     // Copy the mutator to the thread local storage
@@ -363,7 +383,7 @@ JL_DLLEXPORT void *jl_gc_counted_malloc(size_t sz)
     jl_task_t *ct = jl_current_task;
     if (pgcstack && ct->world_age) {
         jl_ptls_t ptls = ct->ptls;
-        maybe_collect(ptls);
+        malloc_maybe_collect(ptls, sz);
         jl_atomic_store_relaxed(&ptls->gc_num.allocd,
             jl_atomic_load_relaxed(&ptls->gc_num.allocd) + sz);
         jl_atomic_store_relaxed(&ptls->gc_num.malloc,
@@ -379,7 +399,7 @@ JL_DLLEXPORT void *jl_gc_counted_calloc(size_t nm, size_t sz)
     jl_task_t *ct = jl_current_task;
     if (pgcstack && ct->world_age) {
         jl_ptls_t ptls = ct->ptls;
-        maybe_collect(ptls);
+        malloc_maybe_collect(ptls, sz);
         jl_atomic_store_relaxed(&ptls->gc_num.allocd,
             jl_atomic_load_relaxed(&ptls->gc_num.allocd) + nm*sz);
         jl_atomic_store_relaxed(&ptls->gc_num.malloc,
@@ -411,7 +431,7 @@ JL_DLLEXPORT void *jl_gc_counted_realloc_with_old_size(void *p, size_t old, size
     jl_task_t *ct = jl_current_task;
     if (pgcstack && ct->world_age) {
         jl_ptls_t ptls = ct->ptls;
-        maybe_collect(ptls);
+        malloc_maybe_collect(ptls, sz);
         if (sz < old)
             jl_atomic_store_relaxed(&ptls->gc_num.freed,
                 jl_atomic_load_relaxed(&ptls->gc_num.freed) + (old - sz));
