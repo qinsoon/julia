@@ -76,54 +76,6 @@ inline void jl_free_aligned(void *p) JL_NOTSAFEPOINT
     mmtk_free_aligned(p);
 }
 
-
-// finalizers
-// ---
-
-JL_DLLEXPORT void jl_gc_run_pending_finalizers(jl_task_t *ct)
-{
-    if (ct == NULL)
-        ct = jl_current_task;
-    mmtk_jl_run_pending_finalizers(ct->ptls);
-}
-
-JL_DLLEXPORT void jl_gc_add_ptr_finalizer(jl_ptls_t ptls, jl_value_t *v, void *f) JL_NOTSAFEPOINT
-{
-    mmtk_register_finalizer(v, f, 1);
-}
-
-// schedule f(v) to call at the next quiescent interval (aka after the next safepoint/region on all threads)
-JL_DLLEXPORT void jl_gc_add_quiescent(jl_ptls_t ptls, void **v, void *f) JL_NOTSAFEPOINT
-{
-    /* TODO: unsupported? */
-}
-
-JL_DLLEXPORT void jl_gc_add_finalizer_th(jl_ptls_t ptls, jl_value_t *v, jl_function_t *f) JL_NOTSAFEPOINT
-{
-    if (__unlikely(jl_typeis(f, jl_voidpointer_type))) {
-        jl_gc_add_ptr_finalizer(ptls, v, jl_unbox_voidpointer(f));
-    }
-    else {
-        mmtk_register_finalizer(v, f, 0);
-    }
-}
-
-JL_DLLEXPORT void jl_finalize_th(jl_task_t *ct, jl_value_t *o)
-{
-    mmtk_run_finalizers_for_obj(o);
-}
-
-void jl_gc_run_all_finalizers(jl_task_t *ct)
-{
-    mmtk_jl_gc_run_all_finalizers();
-}
-
-void jl_gc_add_finalizer_(jl_ptls_t ptls, void *v, void *f) JL_NOTSAFEPOINT
-{
-    mmtk_register_finalizer(v, f, 0);
-}
-
-
 // weak references
 // ---
 JL_DLLEXPORT jl_weakref_t *jl_gc_new_weakref_th(jl_ptls_t ptls, jl_value_t *value)
@@ -299,6 +251,10 @@ void jl_deinit_thread_heap(jl_ptls_t ptls)
     mmtk_destroy_mutator(&ptls->mmtk_mutator);
 }
 
+extern jl_mutex_t finalizers_lock;
+extern arraylist_t to_finalize;
+extern arraylist_t finalizer_list_marked;
+
 // System-wide initialization
 // TODO: remove locks? remove anything else?
 void jl_gc_init(void)
@@ -307,7 +263,11 @@ void jl_gc_init(void)
         jl_gc_set_max_memory(jl_options.heap_size_hint);
 
     JL_MUTEX_INIT(&heapsnapshot_lock, "heapsnapshot_lock");
+    JL_MUTEX_INIT(&finalizers_lock, "finalizers_lock");
     uv_mutex_init(&gc_perm_lock);
+
+    arraylist_new(&to_finalize, 0);
+    arraylist_new(&finalizer_list_marked, 0);
 
     gc_num.interval = default_collect_interval;
     last_long_collect_interval = default_collect_interval;
