@@ -41,7 +41,7 @@ static jl_sym_t *mk_symbol(const char *str, size_t len) JL_NOTSAFEPOINT
     jl_set_typetagof(sym, jl_symbol_tag, GC_OLD_MARKED);
 #ifdef MMTK_GC
     jl_ptls_t ptls = jl_current_task->ptls;
-    mmtk_post_alloc(&ptls->mmtk_mutator, jl_valueof(tag), nb, 1);
+    mmtk_immortal_post_alloc_fast(&ptls->mmtk_mutator, jl_valueof(tag), nb);
 #endif
     jl_atomic_store_relaxed(&sym->left, NULL);
     jl_atomic_store_relaxed(&sym->right, NULL);

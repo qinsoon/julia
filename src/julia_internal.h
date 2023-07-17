@@ -550,7 +550,7 @@ STATIC_INLINE jl_value_t *jl_gc_permobj(size_t sz, void *ty) JL_NOTSAFEPOINT
     o->header = tag | GC_OLD_MARKED;
 #ifdef MMTK_GC
     jl_ptls_t ptls = jl_current_task->ptls;
-    mmtk_post_alloc(&ptls->mmtk_mutator, jl_valueof(o), allocsz, 1);
+    mmtk_immortal_post_alloc_fast(&ptls->mmtk_mutator, jl_valueof(o), allocsz);
 #endif
     return jl_valueof(o);
 }
