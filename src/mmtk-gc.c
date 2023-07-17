@@ -567,7 +567,7 @@ void *jl_gc_perm_alloc_nolock(size_t sz, int zero, unsigned align, unsigned offs
 {
     jl_ptls_t ptls = jl_current_task->ptls;
     size_t allocsz = mmtk_align_alloc_sz(sz);
-    void* addr = mmtk_alloc(&ptls->mmtk_mutator, allocsz, align, offset, 1);
+    void* addr = mmtk_immortal_alloc_fast(&ptls->mmtk_mutator, allocsz, align, offset);
     return addr;
 }
 
