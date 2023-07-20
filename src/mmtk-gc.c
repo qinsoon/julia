@@ -59,21 +59,33 @@ static inline void malloc_maybe_collect(jl_ptls_t ptls, size_t sz)
 
 inline void *jl_malloc_aligned(size_t sz, size_t align)
 {
-    return mmtk_malloc_aligned(sz ? sz : 1, align); // XXX sz
+#if defined(_P64) || defined(__APPLE__)
+    if (align <= 16)
+        return mmtk_counted_malloc(sz);
+#endif
+    void *ptr;
+    if (mmtk_counted_posix_memalign(&ptr, align, sz))
+        return NULL;
+    return ptr;
 }
 inline void *jl_realloc_aligned(void *d, size_t sz, size_t oldsz,
                                        size_t align)
 {
-    void *res = jl_malloc_aligned(sz, align);
-    if (res != NULL) {
-        memcpy(res, d, oldsz > sz ? sz : oldsz);
-        mmtk_free_aligned(d);
+#if defined(_P64) || defined(__APPLE__)
+    if (align <= 16)
+        return mmtk_counted_realloc_with_old_size(d, sz, oldsz);
+#endif
+    void *b = jl_malloc_aligned(sz, align);
+    if (b != NULL) {
+        memcpy(b, d, oldsz > sz ? sz : oldsz);
+        mmtk_counted_free_with_size(d, oldsz);
     }
-    return res;
+    return b;
 }
 inline void jl_free_aligned(void *p) JL_NOTSAFEPOINT
 {
-    mmtk_free_aligned(p);
+    printf("Unused\n");
+    exit(1);
 }
 
 // weak references
@@ -142,12 +154,13 @@ inline jl_value_t *jl_gc_pool_alloc_inner(jl_ptls_t ptls, int pool_offset, int o
    return v;
 }
 
+// This is only used for sweep malloced arrays, which are not counted.
 void jl_gc_free_array(jl_array_t *a) JL_NOTSAFEPOINT
 {
     if (a->flags.how == 2) {
         char *d = (char*)a->data - a->offset*a->elsize;
         if (a->flags.isaligned)
-            mmtk_free_aligned(d);
+            mmtk_free(d);
         else
             mmtk_free(d);
         gc_num.freed += jl_array_nbytes(a);
@@ -379,7 +392,7 @@ JL_DLLEXPORT void jl_gc_counted_free_with_size(void *p, size_t sz)
             jl_atomic_load_relaxed(&ptls->gc_num.freed) + sz);
         jl_atomic_store_relaxed(&ptls->gc_num.freecall,
             jl_atomic_load_relaxed(&ptls->gc_num.freecall) + 1);
-        mmtk_free_with_size(p, sz);
+        mmtk_counted_free_with_size(p, sz);
         return;
     }
     free(p);
@@ -400,7 +413,7 @@ JL_DLLEXPORT void *jl_gc_counted_realloc_with_old_size(void *p, size_t old, size
                 jl_atomic_load_relaxed(&ptls->gc_num.allocd) + (sz - old));
         jl_atomic_store_relaxed(&ptls->gc_num.realloc,
             jl_atomic_load_relaxed(&ptls->gc_num.realloc) + 1);
-        return mmtk_realloc_with_old_size(p, sz, old);
+        return mmtk_counted_realloc_with_old_size(p, sz, old);
     }
     // TODO: correct?
     return realloc(p, sz);
