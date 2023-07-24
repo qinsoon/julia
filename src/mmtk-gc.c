@@ -53,6 +53,69 @@ static inline void malloc_maybe_collect(jl_ptls_t ptls, size_t sz)
     }
 }
 
+// malloc wrappers, aligned allocation
+// We currently just duplicate what Julia GC does. We will in the future replace the malloc calls with MMTK's malloc.
+
+#if defined(_OS_WINDOWS_)
+inline void *jl_malloc_aligned(size_t sz, size_t align)
+{
+    return _aligned_malloc(sz ? sz : 1, align);
+}
+inline void *jl_realloc_aligned(void *p, size_t sz, size_t oldsz,
+                                       size_t align)
+{
+    (void)oldsz;
+    return _aligned_realloc(p, sz ? sz : 1, align);
+}
+inline void jl_free_aligned(void *p) JL_NOTSAFEPOINT
+{
+    _aligned_free(p);
+}
+#else
+inline void *jl_malloc_aligned(size_t sz, size_t align)
+{
+#if defined(_P64) || defined(__APPLE__)
+    if (align <= 16)
+        return malloc(sz);
+#endif
+    void *ptr;
+    if (posix_memalign(&ptr, align, sz))
+        return NULL;
+    return ptr;
+}
+inline void *jl_realloc_aligned(void *d, size_t sz, size_t oldsz,
+                                       size_t align)
+{
+#if defined(_P64) || defined(__APPLE__)
+    if (align <= 16)
+        return realloc(d, sz);
+#endif
+    void *b = jl_malloc_aligned(sz, align);
+    if (b != NULL) {
+        memcpy(b, d, oldsz > sz ? sz : oldsz);
+        free(d);
+    }
+    return b;
+}
+inline void jl_free_aligned(void *p) JL_NOTSAFEPOINT
+{
+    free(p);
+}
+#endif
+
+static void jl_gc_free_array(jl_array_t *a) JL_NOTSAFEPOINT
+{
+    if (a->flags.how == 2) {
+        char *d = (char*)a->data - a->offset*a->elsize;
+        if (a->flags.isaligned)
+            jl_free_aligned(d);
+        else
+            free(d);
+        gc_num.freed += jl_array_nbytes(a);
+        gc_num.freecall++;
+    }
+}
+
 // ---
 
 JL_DLLEXPORT void jl_gc_run_pending_finalizers(jl_task_t *ct)
