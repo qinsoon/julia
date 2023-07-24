@@ -356,7 +356,7 @@ JL_DLLEXPORT void *jl_gc_counted_calloc(size_t nm, size_t sz)
     jl_task_t *ct = jl_current_task;
     if (pgcstack && ct->world_age) {
         jl_ptls_t ptls = ct->ptls;
-        malloc_maybe_collect(ptls, sz);
+        malloc_maybe_collect(ptls, num * sz);
         jl_atomic_fetch_add_relaxed(&JULIA_MALLOC_BYTES, nm * sz);
     }
     return calloc(nm, sz);
