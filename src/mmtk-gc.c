@@ -103,19 +103,6 @@ inline void jl_free_aligned(void *p) JL_NOTSAFEPOINT
 }
 #endif
 
-static void jl_gc_free_array(jl_array_t *a) JL_NOTSAFEPOINT
-{
-    if (a->flags.how == 2) {
-        char *d = (char*)a->data - a->offset*a->elsize;
-        if (a->flags.isaligned)
-            jl_free_aligned(d);
-        else
-            free(d);
-        gc_num.freed += jl_array_nbytes(a);
-        gc_num.freecall++;
-    }
-}
-
 // ---
 
 JL_DLLEXPORT void jl_gc_run_pending_finalizers(jl_task_t *ct)
@@ -226,6 +213,19 @@ inline jl_value_t *jl_gc_pool_alloc_inner(jl_ptls_t ptls, int pool_offset, int o
         jl_atomic_load_relaxed(&ptls->gc_num.poolalloc) + 1);
     */
    return v;
+}
+
+void jl_gc_free_array(jl_array_t *a) JL_NOTSAFEPOINT
+{
+    if (a->flags.how == 2) {
+        char *d = (char*)a->data - a->offset*a->elsize;
+        if (a->flags.isaligned)
+            jl_free_aligned(d);
+        else
+            free(d);
+        gc_num.freed += jl_array_nbytes(a);
+        gc_num.freecall++;
+    }
 }
 
 // roots
@@ -419,7 +419,7 @@ JL_DLLEXPORT void *jl_gc_counted_calloc(size_t nm, size_t sz)
     jl_task_t *ct = jl_current_task;
     if (pgcstack && ct->world_age) {
         jl_ptls_t ptls = ct->ptls;
-        malloc_maybe_collect(ptls, num * sz);
+        malloc_maybe_collect(ptls, nm * sz);
         jl_atomic_fetch_add_relaxed(&JULIA_MALLOC_BYTES, nm * sz);
     }
     return calloc(nm, sz);
