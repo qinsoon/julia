@@ -33,10 +33,11 @@
 extern void maybe_collect(jl_ptls_t ptls);
 extern void run_finalizer(jl_task_t *ct, void *o, void *ff);
 extern void *jl_malloc_aligned(size_t sz, size_t align);
+extern void *jl_realloc_aligned(void *d, size_t sz, size_t oldsz, size_t align);
+extern void jl_free_aligned(void *p);
 extern void *jl_gc_counted_calloc(size_t nm, size_t sz);
 extern void jl_gc_counted_free_with_size(void *p, size_t sz);
 extern void *jl_gc_counted_realloc_with_old_size(void *p, size_t old, size_t sz);
-extern void *jl_realloc_aligned(void *d, size_t sz, size_t oldsz, size_t align);
 extern void jl_gc_add_finalizer_th(jl_ptls_t ptls, jl_value_t *v, jl_function_t *f);
 extern void jl_finalize_th(jl_task_t *ct, jl_value_t *o);
 extern jl_weakref_t *jl_gc_new_weakref_th(jl_ptls_t ptls, jl_value_t *value);
@@ -47,6 +48,7 @@ extern void gc_premark(jl_ptls_t ptls2);
 extern void *gc_managed_realloc_(jl_ptls_t ptls, void *d, size_t sz, size_t oldsz,
                                  int isaligned, jl_value_t *owner, int8_t can_collect);
 extern size_t jl_array_nbytes(jl_array_t *a);
+extern void run_finalizers(jl_task_t *ct);
 
 #ifdef OBJPROFILE
 void objprofile_count(void *ty, int old, int sz) JL_NOTSAFEPOINT;
@@ -380,6 +382,7 @@ extern pagetable_t memory_map;
 extern bigval_t *big_objects_marked;
 extern arraylist_t finalizer_list_marked;
 extern arraylist_t to_finalize;
+extern jl_mutex_t finalizers_lock;
 extern int64_t lazy_freed_pages;
 
 STATIC_INLINE bigval_t *bigval_header(jl_taggedvalue_t *o) JL_NOTSAFEPOINT
