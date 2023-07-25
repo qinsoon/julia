@@ -2386,16 +2386,19 @@ extern void* mmtk_alloc(void* mutator, size_t size, size_t align, size_t offset,
 
 extern const void* MMTK_SIDE_LOG_BIT_BASE_ADDRESS;
 
-#define MMTK_OBJECT_BARRIER (1)
-#define MMTK_DEFAULT_IMMIX_ALLOCATOR (0)
-#define MMTK_IMMORTAL_BUMP_ALLOCATOR (0)
+// These need to be constants.
 
+#define MMTK_OBJECT_BARRIER (1)
+// Stickyimmix needs write barrier. Immix does not need write barrier.
 #ifdef MMTK_PLAN_IMMIX
 #define MMTK_NEEDS_WRITE_BARRIER (0)
 #endif
 #ifdef MMTK_PLAN_STICKYIMMIX
 #define MMTK_NEEDS_WRITE_BARRIER (1)
 #endif
+
+#define MMTK_DEFAULT_IMMIX_ALLOCATOR (0)
+#define MMTK_IMMORTAL_BUMP_ALLOCATOR (0)
 
 // Directly call into MMTk for write barrier (debugging only)
 STATIC_INLINE void mmtk_gc_wb_full(const void *parent, const void *ptr) JL_NOTSAFEPOINT
