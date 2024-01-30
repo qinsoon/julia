@@ -240,6 +240,7 @@ JL_DLLEXPORT void jl_gc_queue_multiroot(const jl_value_t *parent, const jl_value
 
 JL_DLLEXPORT void jl_gc_queue_binding(jl_binding_t *bnd)
 {
+    mmtk_unreachable();
 }
 
 
