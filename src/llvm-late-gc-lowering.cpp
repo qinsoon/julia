@@ -2535,7 +2535,7 @@ bool LateLowerGCFrame::CleanupIR(Function &F, State *S, bool *CFGModified) {
             assert(false);
         }
 #else
-        const bool INLINE_WRITE_BARRIER = false;
+        const bool INLINE_WRITE_BARRIER = true;
         if (CI->getCalledOperand() == write_barrier_func || CI->getCalledOperand() == write_barrier_binding_func) {
             if (MMTK_NEEDS_WRITE_BARRIER == MMTK_OBJECT_BARRIER) {
                 if (INLINE_WRITE_BARRIER) {
@@ -2569,6 +2569,17 @@ bool LateLowerGCFrame::CleanupIR(Function &F, State *S, bool *CFGModified) {
                     SmallVector<uint32_t, 2> Weights{1, 9};
                     auto mayTriggerSlowpath = SplitBlockAndInsertIfThen(is_unlogged, CI, false, MDB.createBranchWeights(Weights));
                     builder.SetInsertPoint(mayTriggerSlowpath);
+
+                    // for binding write barrier, we also set gc bits to 2 (see mmtk_gc_wb_binding)
+                    if (CI->getCalledOperand() == write_barrier_binding_func) {
+                        auto tag = EmitLoadTag(builder, parent);
+                        auto cleared_bits = builder.CreateAnd(tag, ConstantInt::get(T_size, ~0x3));
+                        auto new_tag = builder.CreateOr(cleared_bits, ConstantInt::get(T_size, 2));
+                        auto store = builder.CreateAlignedStore(new_tag, EmitTagPtr(builder, T_size, parent), Align(sizeof(size_t)));
+                        store->setOrdering(AtomicOrdering::Unordered);
+                        store->setMetadata(LLVMContext::MD_tbaa, tbaa_tag);
+                    }
+
                     // We just need the src object (parent)
                     builder.CreateCall(getOrDeclare(jl_intrinsics::writeBarrier1Slow), { parent });
                 } else {
