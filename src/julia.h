@@ -965,6 +965,7 @@ STATIC_INLINE void jl_gc_multi_wb(const void *parent, const jl_value_t *ptr) JL_
 }
 #else  // MMTK_GC
 STATIC_INLINE void mmtk_gc_wb(const void *parent, const void *ptr) JL_NOTSAFEPOINT;
+STATIC_INLINE void mmtk_gc_wb_binding(const void *parent, const void *ptr) JL_NOTSAFEPOINT;
 
 STATIC_INLINE void jl_gc_wb(const void *parent, const void *ptr) JL_NOTSAFEPOINT
 {
@@ -2317,25 +2318,43 @@ STATIC_INLINE void mmtk_gc_wb_full(const void *parent, const void *ptr) JL_NOTSA
     mmtk_object_reference_write_post(&ptls->mmtk_mutator, parent, ptr);
 }
 
-// Inlined fastpath
-STATIC_INLINE void mmtk_gc_wb_fast(const void *parent, const void *ptr) JL_NOTSAFEPOINT
+// Fastpath. Return 1 if we should go to slowpath
+STATIC_INLINE int mmtk_gc_wb_fast_check(const void *parent, const void *ptr) JL_NOTSAFEPOINT
 {
     if (MMTK_NEEDS_WRITE_BARRIER == MMTK_OBJECT_BARRIER) {
         intptr_t addr = (intptr_t) (void*) parent;
         uint8_t* meta_addr = (uint8_t*) (MMTK_SIDE_LOG_BIT_BASE_ADDRESS) + (addr >> 6);
         intptr_t shift = (addr >> 3) & 0b111;
         uint8_t byte_val = *meta_addr;
-        if (((byte_val >> shift) & 1) == 1) {
-            jl_task_t *ct = jl_current_task;
-            jl_ptls_t ptls = ct->ptls;
-            mmtk_object_reference_write_slow(&ptls->mmtk_mutator, parent, ptr);
-        }
+        return ((byte_val >> shift) & 1) == 1;
+    } else {
+        return 0;
+    }
+}
+
+// Slowpath.
+STATIC_INLINE void mmtk_gc_wb_slow(const void *parent, const void *ptr) JL_NOTSAFEPOINT
+{
+    if (MMTK_NEEDS_WRITE_BARRIER == MMTK_OBJECT_BARRIER) {
+        jl_task_t *ct = jl_current_task;
+        jl_ptls_t ptls = ct->ptls;
+        mmtk_object_reference_write_slow(&ptls->mmtk_mutator, parent, ptr);
     }
 }
 
 STATIC_INLINE void mmtk_gc_wb(const void *parent, const void *ptr) JL_NOTSAFEPOINT
 {
-    mmtk_gc_wb_fast(parent, ptr);
+    if (mmtk_gc_wb_fast_check(parent, ptr)) {
+        mmtk_gc_wb_slow(parent, ptr);
+    }
+}
+
+STATIC_INLINE void mmtk_gc_wb_binding(const void *bnd, const void *val) JL_NOTSAFEPOINT
+{
+    if (mmtk_gc_wb_fast_check(bnd, val)) {
+        jl_astaggedvalue(bnd)->bits.gc = 2; // to indicate that the buffer is a binding
+        mmtk_gc_wb_slow(bnd, val);
+    }
 }
 
 #define MMTK_MIN_ALIGNMENT 4

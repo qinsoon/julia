@@ -2586,8 +2586,10 @@ bool LateLowerGCFrame::CleanupIR(Function &F, State *S, bool *CFGModified) {
                     }
                 }
             } else {
-                jl_printf(JL_STDERR, "ERROR: only object barrier fastpath is implemented");
-                assert(false);
+                if (MMTK_NEEDS_WRITE_BARRIER != 0) {
+                    jl_printf(JL_STDERR, "ERROR: only object barrier fastpath is implemented");
+                    assert(false);
+                }
             }
         } else {
             assert(false);
