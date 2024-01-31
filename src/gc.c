@@ -3343,18 +3343,27 @@ JL_DLLEXPORT jl_value_t *jl_gc_internal_obj_base_ptr(void *p)
 
 JL_DLLEXPORT void jl_gc_wb1_noinline(const void *parent) JL_NOTSAFEPOINT
 {
+    jl_unreachable();
 }
 
 JL_DLLEXPORT void jl_gc_wb2_noinline(const void *parent, const void *ptr) JL_NOTSAFEPOINT
 {
+    jl_unreachable();
+}
+
+JL_DLLEXPORT void jl_gc_wb_binding_noinline(const void *parent, const void *ptr) JL_NOTSAFEPOINT
+{
+    jl_unreachable();
 }
 
 JL_DLLEXPORT void jl_gc_wb1_slow(const void *parent) JL_NOTSAFEPOINT
 {
+    jl_unreachable();
 }
 
 JL_DLLEXPORT void jl_gc_wb2_slow(const void *parent, const void* ptr) JL_NOTSAFEPOINT
 {
+    jl_unreachable();
 }
 
 #ifdef __cplusplus

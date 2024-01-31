@@ -54,6 +54,7 @@ private:
 #ifdef MMTK_GC
     Function *writeBarrier1Func;
     Function *writeBarrier2Func;
+    Function *writeBarrierBindingFunc;
     Function *writeBarrier1SlowFunc;
     Function *writeBarrier2SlowFunc;
 #endif
@@ -86,6 +87,7 @@ private:
 #ifdef MMTK_GC
     Value *lowerWriteBarrier1(CallInst *target, Function &F);
     Value *lowerWriteBarrier2(CallInst *target, Function &F);
+    Value *lowerWriteBarrierBinding(CallInst *target, Function &F);
     Value *lowerWriteBarrier1Slow(CallInst *target, Function &F);
     Value *lowerWriteBarrier2Slow(CallInst *target, Function &F);
 #endif
@@ -246,6 +248,13 @@ Value *FinalLowerGC::lowerWriteBarrier2(CallInst *target, Function &F)
     return target;
 }
 
+Value *FinalLowerGC::lowerWriteBarrierBinding(CallInst *target, Function &F)
+{
+    assert(target->arg_size() == 2);
+    target->setCalledFunction(writeBarrierBindingFunc);
+    return target;
+}
+
 Value *FinalLowerGC::lowerWriteBarrier1Slow(CallInst *target, Function &F)
 {
     assert(target->arg_size() == 1);
@@ -400,9 +409,10 @@ bool FinalLowerGC::doInitialization(Module &M) {
 #ifdef MMTK_GC
     writeBarrier1Func = getOrDeclare(jl_well_known::GCWriteBarrier1);
     writeBarrier2Func = getOrDeclare(jl_well_known::GCWriteBarrier2);
+    writeBarrierBindingFunc = getOrDeclare(jl_well_known::GCWriteBarrierBinding);
     writeBarrier1SlowFunc = getOrDeclare(jl_well_known::GCWriteBarrier1Slow);
     writeBarrier2SlowFunc = getOrDeclare(jl_well_known::GCWriteBarrier2Slow);
-    GlobalValue *functionList[] = {queueRootFunc, poolAllocFunc, bigAllocFunc, writeBarrier1Func, writeBarrier2Func, writeBarrier1SlowFunc, writeBarrier2SlowFunc};
+    GlobalValue *functionList[] = {queueRootFunc, poolAllocFunc, bigAllocFunc, writeBarrier1Func, writeBarrier2Func, writeBarrierBindingFunc, writeBarrier1SlowFunc, writeBarrier2SlowFunc};
 #else
     GlobalValue *functionList[] = {queueRootFunc, queueBindingFunc, poolAllocFunc, bigAllocFunc, allocTypedFunc};
 #endif
@@ -422,8 +432,8 @@ bool FinalLowerGC::doInitialization(Module &M) {
 bool FinalLowerGC::doFinalization(Module &M)
 {
 #ifdef MMTK_GC
-    GlobalValue *functionList[] = {queueRootFunc, poolAllocFunc, bigAllocFunc, writeBarrier1Func, writeBarrier2Func, writeBarrier1SlowFunc, writeBarrier2SlowFunc};
-    queueRootFunc = poolAllocFunc = bigAllocFunc = writeBarrier1Func = writeBarrier2Func = writeBarrier1SlowFunc = writeBarrier2SlowFunc = nullptr;
+    GlobalValue *functionList[] = {queueRootFunc, poolAllocFunc, bigAllocFunc, writeBarrier1Func, writeBarrier2Func, writeBarrierBindingFunc, writeBarrier1SlowFunc, writeBarrier2SlowFunc};
+    queueRootFunc = poolAllocFunc = bigAllocFunc = writeBarrier1Func = writeBarrier2Func = writeBarrierBindingFunc = writeBarrier1SlowFunc = writeBarrier2SlowFunc = nullptr;
 #else
     GlobalValue *functionList[] = {queueRootFunc, queueBindingFunc, poolAllocFunc, bigAllocFunc, allocTypedFunc};
     queueRootFunc = queueBindingFunc = poolAllocFunc = bigAllocFunc = allocTypedFunc = nullptr;
@@ -501,6 +511,7 @@ bool FinalLowerGC::runOnFunction(Function &F)
 #ifdef MMTK_GC
     auto writeBarrier1Func = getOrNull(jl_intrinsics::writeBarrier1);
     auto writeBarrier2Func = getOrNull(jl_intrinsics::writeBarrier2);
+    auto writeBarrierBindingFunc = getOrNull(jl_intrinsics::writeBarrierBinding);
     auto writeBarrier1SlowFunc = getOrNull(jl_intrinsics::writeBarrier1Slow);
     auto writeBarrier2SlowFunc = getOrNull(jl_intrinsics::writeBarrier2Slow);
 #endif
@@ -544,6 +555,9 @@ bool FinalLowerGC::runOnFunction(Function &F)
             }
             else if (callee == writeBarrier2Func) {
                 replaceInstruction(CI, lowerWriteBarrier2(CI, F), it);
+            }
+            else if (callee == writeBarrierBindingFunc) {
+                replaceInstruction(CI, lowerWriteBarrierBinding(CI, F), it);
             }
             else if (callee == writeBarrier1SlowFunc) {
                 replaceInstruction(CI, lowerWriteBarrier1Slow(CI, F), it);

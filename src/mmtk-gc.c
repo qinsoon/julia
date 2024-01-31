@@ -566,6 +566,11 @@ JL_DLLEXPORT void jl_gc_wb2_noinline(const void *parent, const void *ptr) JL_NOT
     jl_gc_wb(parent, ptr);
 }
 
+JL_DLLEXPORT void jl_gc_wb_binding_noinline(const void *bnd, const void *val) JL_NOTSAFEPOINT
+{
+    jl_gc_wb_binding((jl_binding_t*)bnd, (void*)val);
+}
+
 JL_DLLEXPORT void jl_gc_wb1_slow(const void *parent) JL_NOTSAFEPOINT
 {
     jl_task_t *ct = jl_current_task;

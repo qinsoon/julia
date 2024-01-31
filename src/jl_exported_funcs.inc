@@ -193,6 +193,7 @@
     XX(jl_gc_queue_root) \
     XX(jl_gc_wb1_noinline) \
     XX(jl_gc_wb2_noinline) \
+    XX(jl_gc_wb_binding_noinline) \
     XX(jl_gc_wb1_slow) \
     XX(jl_gc_wb2_slow) \
     XX(jl_gc_safepoint) \

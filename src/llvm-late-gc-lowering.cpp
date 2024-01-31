@@ -2535,10 +2535,7 @@ bool LateLowerGCFrame::CleanupIR(Function &F, State *S, bool *CFGModified) {
             assert(false);
         }
 #else
-        // FIXME: Currently we call write barrier with the src object (parent).
-        // This works fine for object barrier for generational plans (such as stickyimmix), which does not use the target object at all.
-        // But for other MMTk plans, we need to be careful.
-        const bool INLINE_WRITE_BARRIER = true;
+        const bool INLINE_WRITE_BARRIER = false;
         if (CI->getCalledOperand() == write_barrier_func || CI->getCalledOperand() == write_barrier_binding_func) {
             if (MMTK_NEEDS_WRITE_BARRIER == MMTK_OBJECT_BARRIER) {
                 if (INLINE_WRITE_BARRIER) {
@@ -2572,11 +2569,25 @@ bool LateLowerGCFrame::CleanupIR(Function &F, State *S, bool *CFGModified) {
                     SmallVector<uint32_t, 2> Weights{1, 9};
                     auto mayTriggerSlowpath = SplitBlockAndInsertIfThen(is_unlogged, CI, false, MDB.createBranchWeights(Weights));
                     builder.SetInsertPoint(mayTriggerSlowpath);
+                    // We just need the src object (parent)
                     builder.CreateCall(getOrDeclare(jl_intrinsics::writeBarrier1Slow), { parent });
                 } else {
-                    Function *wb_func = getOrDeclare(jl_intrinsics::writeBarrier1);
-                    builder.CreateCall(wb_func, { parent });
+                    // Do not inlie write barrier -- just call into each function.
+                    // For object remembering barrier, we just need the src object (parent)
+                    if (CI->getCalledOperand() == write_barrier_func) {
+                        Function *wb_func = getOrDeclare(jl_intrinsics::writeBarrier1);
+                        builder.CreateCall(wb_func, { parent });
+                    } else {
+                        assert(CI->getCalledOperand() == write_barrier_binding_func);
+                        assert(CI->arg_size() == 2);
+                        auto val = CI->getArgOperand(1);
+                        Function *wb_func = getOrDeclare(jl_intrinsics::writeBarrierBinding);
+                        builder.CreateCall(wb_func, { parent, val });
+                    }
                 }
+            } else {
+                jl_printf(JL_STDERR, "ERROR: only object barrier fastpath is implemented");
+                assert(false);
             }
         } else {
             assert(false);
