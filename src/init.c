@@ -824,9 +824,6 @@ JL_DLLEXPORT void julia_init(JL_IMAGE_SEARCH rel)
 
     jl_ptls_t ptls = jl_init_threadtls(0);
 
-#ifdef MMTK_GC
-    mmtk_initialize_collection((void *)ptls);
-#endif
 #pragma GCC diagnostic push
 #if defined(_COMPILER_GCC_) && __GNUC__ >= 12
 #pragma GCC diagnostic ignored "-Wdangling-pointer"
@@ -836,6 +833,9 @@ JL_DLLEXPORT void julia_init(JL_IMAGE_SEARCH rel)
 #pragma GCC diagnostic pop
     JL_GC_PROMISE_ROOTED(ct);
     _finish_julia_init(rel, ptls, ct);
+#ifdef MMTK_GC
+    mmtk_initialize_collection((void *)ptls);
+#endif
 }
 
 static NOINLINE void _finish_julia_init(JL_IMAGE_SEARCH rel, jl_ptls_t ptls, jl_task_t *ct)
