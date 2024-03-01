@@ -13,8 +13,11 @@ extern int mmtk_object_is_managed_by_mmtk(void* addr);
 extern unsigned char mmtk_pin_object(void* obj);
 // FIXME: Pinning objects that get hashed in the ptrhash table
 // until we implement address space hashing.
-#define PTRHASH_PIN(key)                        \
-        mmtk_pin_object(key);                   \
+#ifdef MMTK_GC
+#define PTRHASH_PIN(key) mmtk_pin_object(key);
+#else
+#define PTRHASH_PIN(key)
+#endif
 
 #ifdef __cplusplus
 }
