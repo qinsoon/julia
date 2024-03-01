@@ -3,6 +3,22 @@
 #ifndef JL_INTERNAL_H
 #define JL_INTERNAL_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+extern int mmtk_object_is_managed_by_mmtk(void* addr);
+extern unsigned char mmtk_pin_object(void* obj);
+#ifdef MMTK_GC
+#define PTR_PIN(key) mmtk_pin_object(key);
+#else
+#define PTR_PIN(key)
+#endif
+
+#ifdef __cplusplus
+}
+#endif
+
 #include "options.h"
 #include "julia_assert.h"
 #include "julia_locks.h"
@@ -535,7 +551,7 @@ STATIC_INLINE jl_gc_tracked_buffer_t *jl_gc_alloc_buf(jl_ptls_t ptls, size_t sz)
     // introspect the object to update the a->data field. To avoid doing that and
     // making scan_object much more complex we simply enforce that both owner and
     // buffers are always pinned
-    mmtk_pin_object(buf);
+    PTR_PIN(buf);
     return buf;
 }
 
