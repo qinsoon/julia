@@ -25,10 +25,12 @@ _Atomic(int) gc_master_tid;
 uv_mutex_t gc_threads_lock;
 uv_cond_t gc_threads_cond;
 
+#ifdef GC_FIXED_HEAP
 // Globally allocated bytes by malloc - used for fixed heap size
 _Atomic(uint64_t) malloc_bytes;
 // Globally allocated pool pages - used for fixed heap size
 extern uint64_t jl_current_pg_count(void);
+#endif
 
 // Linked list of callback functions
 
@@ -398,7 +400,9 @@ extern int64_t live_bytes;
 static int64_t perm_scanned_bytes; // old bytes scanned while marking
 int prev_sweep_full = 1;
 int current_sweep_full = 0;
+#ifdef GC_FIXED_HEAP
 int next_sweep_full = 0; // force next sweep to be a full sweep - used by fixed heap size
+#endif
 
 // Full collection heuristics
 static int64_t promoted_bytes = 0;
@@ -580,6 +584,7 @@ void gc_setmark_buf(jl_ptls_t ptls, void *o, uint8_t mark_mode, size_t minsz) JL
 
 inline void maybe_collect(jl_ptls_t ptls)
 {
+#ifdef GC_FIXED_HEAP
     if (jl_options.fixed_heap_size) {
         uint64_t current_heap_size = ((uint64_t)jl_current_pg_count()) << (uint64_t)14;
         current_heap_size += jl_atomic_load_relaxed(&malloc_bytes);
@@ -588,13 +593,14 @@ inline void maybe_collect(jl_ptls_t ptls)
         } else {
             jl_gc_safepoint_(ptls);
         }
-    } else {
-        if (jl_atomic_load_relaxed(&ptls->gc_num.allocd) >= 0 || jl_gc_debug_check_other()) {
-            jl_gc_collect(JL_GC_AUTO);
-        }
-        else {
-            jl_gc_safepoint_(ptls);
-        }
+        return;
+    }
+#endif
+    if (jl_atomic_load_relaxed(&ptls->gc_num.allocd) >= 0 || jl_gc_debug_check_other()) {
+        jl_gc_collect(JL_GC_AUTO);
+    }
+    else {
+        jl_gc_safepoint_(ptls);
     }
 }
 
@@ -2724,6 +2730,7 @@ static int _jl_gc_collect(jl_ptls_t ptls, jl_gc_collection_t collection)
         sweep_full = 1;
         recollect = 1;
     }
+#ifdef GC_FIXED_HEAP
     if (jl_options.fixed_heap_size) {
         // For fixed heap size, do not trigger full sweep for any other heuristics
         sweep_full = 0;
@@ -2732,6 +2739,7 @@ static int _jl_gc_collect(jl_ptls_t ptls, jl_gc_collection_t collection)
         next_sweep_full = 0;
         sweep_full = 1;
     }
+#endif
     if (sweep_full) {
         // these are the difference between the number of gc-perm bytes scanned
         // on the first collection after sweep_full, and the current scan
@@ -2848,12 +2856,14 @@ static int _jl_gc_collect(jl_ptls_t ptls, jl_gc_collection_t collection)
         }
     }
 
+#ifdef GC_FIXED_HEAP
     if (jl_options.fixed_heap_size) {
         uint64_t current_heap_size = ((uint64_t)jl_current_pg_count()) << ((uint64_t)14);
         if (current_heap_size > (jl_options.fixed_heap_size * 4 / 5)) {
             next_sweep_full = 1;
         }
     }
+#endif
 
     gc_time_summary(sweep_full, t_start, gc_end_time, gc_num.freed,
                     live_bytes, gc_num.interval, pause,
@@ -3061,10 +3071,12 @@ void jl_gc_init(void)
     if (jl_options.heap_size_hint)
         jl_gc_set_max_memory(jl_options.heap_size_hint);
 
+#ifdef GC_FIXED_HEAP
     if (jl_options.fixed_heap_size) {
         // This guarantees that we will not trigger a GC before reaching heap limit
         gc_num.interval = jl_options.fixed_heap_size;
     }
+#endif
 
     t_start = jl_hrtime();
 }
@@ -3082,7 +3094,9 @@ JL_DLLEXPORT void *jl_gc_counted_malloc(size_t sz)
             jl_atomic_load_relaxed(&ptls->gc_num.allocd) + sz);
         jl_atomic_store_relaxed(&ptls->gc_num.malloc,
             jl_atomic_load_relaxed(&ptls->gc_num.malloc) + 1);
+#ifdef GC_FIXED_HEAP
         jl_atomic_fetch_add_relaxed(&malloc_bytes, sz);
+#endif
     }
     return malloc(sz);
 }
@@ -3098,7 +3112,9 @@ JL_DLLEXPORT void *jl_gc_counted_calloc(size_t nm, size_t sz)
             jl_atomic_load_relaxed(&ptls->gc_num.allocd) + nm*sz);
         jl_atomic_store_relaxed(&ptls->gc_num.malloc,
             jl_atomic_load_relaxed(&ptls->gc_num.malloc) + 1);
+#ifdef GC_FIXED_HEAP
         jl_atomic_fetch_add_relaxed(&malloc_bytes, nm * sz);
+#endif
     }
     return calloc(nm, sz);
 }
@@ -3114,7 +3130,9 @@ JL_DLLEXPORT void jl_gc_counted_free_with_size(void *p, size_t sz)
             jl_atomic_load_relaxed(&ptls->gc_num.freed) + sz);
         jl_atomic_store_relaxed(&ptls->gc_num.freecall,
             jl_atomic_load_relaxed(&ptls->gc_num.freecall) + 1);
+#ifdef GC_FIXED_HEAP
         jl_atomic_fetch_add_relaxed(&malloc_bytes, -sz);
+#endif
     }
 }
 
@@ -3128,11 +3146,15 @@ JL_DLLEXPORT void *jl_gc_counted_realloc_with_old_size(void *p, size_t old, size
         if (sz < old) {
             jl_atomic_store_relaxed(&ptls->gc_num.freed,
                 jl_atomic_load_relaxed(&ptls->gc_num.freed) + (old - sz));
+#ifdef GC_FIXED_HEAP
             jl_atomic_fetch_add_relaxed(&malloc_bytes, old - sz);
+#endif
         } else {
             jl_atomic_store_relaxed(&ptls->gc_num.allocd,
                 jl_atomic_load_relaxed(&ptls->gc_num.allocd) + (sz - old));
+#ifdef GC_FIXED_HEAP
             jl_atomic_fetch_add_relaxed(&malloc_bytes, sz - old);
+#endif
         }
         jl_atomic_store_relaxed(&ptls->gc_num.realloc,
             jl_atomic_load_relaxed(&ptls->gc_num.realloc) + 1);
