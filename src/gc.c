@@ -3075,6 +3075,8 @@ void jl_gc_init(void)
     if (jl_options.fixed_heap_size) {
         // This guarantees that we will not trigger a GC before reaching heap limit
         gc_num.interval = jl_options.fixed_heap_size;
+    } else {
+        jl_printf(JL_STDERR, "Warning: The option fixed-heap-size is not set for a build with WITH_GC_FIXED_HEAP\n");
     }
 #endif
 

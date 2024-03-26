@@ -85,7 +85,9 @@ HAVE_SSP := 0
 # GC debugging options
 WITH_GC_VERIFY := 0
 WITH_GC_DEBUG_ENV := 0
-WITH_GC_FIXED_HEAP := 0
+
+# Overwrite Julia's GC heuristics and only trigger a GC if the heap is full (fixed_heap_size needs to be set in this build)
+WITH_GC_FIXED_HEAP ?= 0
 
 # MMTk GC
 WITH_MMTK ?= 0
