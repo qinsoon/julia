@@ -47,7 +47,7 @@ extern void jl_rng_split(uint64_t to[4], uint64_t from[4]);
 extern void gc_premark(jl_ptls_t ptls2);
 extern void *gc_managed_realloc_(jl_ptls_t ptls, void *d, size_t sz, size_t oldsz,
                                  int isaligned, jl_value_t *owner, int8_t can_collect);
-extern size_t jl_array_nbytes(jl_array_t *a);
+extern size_t jl_array_nbytes(jl_array_t *a) JL_NOTSAFEPOINT;
 extern void run_finalizers(jl_task_t *ct);
 
 #ifdef OBJPROFILE

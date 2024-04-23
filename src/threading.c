@@ -309,7 +309,7 @@ static uv_cond_t cond;
 // it is implemented separately because the API of direct jl_all_tls_states use is already widely prevalent
 
 // return calling thread's ID
-JL_DLLEXPORT int16_t jl_threadid(void)
+JL_DLLEXPORT int16_t jl_threadid(void) JL_NOTSAFEPOINT
 {
     return jl_atomic_load_relaxed(&jl_current_task->tid);
 }
