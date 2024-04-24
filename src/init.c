@@ -833,9 +833,6 @@ JL_DLLEXPORT void julia_init(JL_IMAGE_SEARCH rel)
 #pragma GCC diagnostic pop
     JL_GC_PROMISE_ROOTED(ct);
     _finish_julia_init(rel, ptls, ct);
-#ifdef MMTK_GC
-    mmtk_initialize_collection((void *)ptls);
-#endif
 }
 
 static NOINLINE void _finish_julia_init(JL_IMAGE_SEARCH rel, jl_ptls_t ptls, jl_task_t *ct)
@@ -883,6 +880,9 @@ static NOINLINE void _finish_julia_init(JL_IMAGE_SEARCH rel, jl_ptls_t ptls, jl_
     }
     jl_start_threads();
 
+#ifdef MMTK_GC
+    mmtk_initialize_collection((void *)ptls);
+#endif
     jl_gc_enable(1);
 
     if (jl_options.image_file && (!jl_generating_output() || jl_options.incremental) && jl_module_init_order) {
