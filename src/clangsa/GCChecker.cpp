@@ -64,6 +64,7 @@ class GCChecker
 public:
   struct ValueState {
     enum State { Allocated, Rooted, PotentiallyFreed, Untracked } S;
+    enum Pin { TransitivelyPinned, Pinned, NotPinned, Moved } P;
     const MemRegion *Root;
     int RootDepth;
 
@@ -71,10 +72,12 @@ public:
     const FunctionDecl *FD;
     const ParmVarDecl *PVD;
 
-    ValueState(State InS, const MemRegion *Root, int Depth)
-        : S(InS), Root(Root), RootDepth(Depth), FD(nullptr), PVD(nullptr) {}
+    ValueState(State InS, Pin PinState, const MemRegion *Root, int Depth, const FunctionDecl *FD, const ParmVarDecl *PVD)
+        : S(InS), P(PinState), Root(Root), RootDepth(Depth), FD(FD), PVD(PVD) {}
+    ValueState(State InS, Pin PinState, const MemRegion *Root, int Depth)
+        : S(InS), P(PinState), Root(Root), RootDepth(Depth), FD(nullptr), PVD(nullptr) {}
     ValueState()
-        : S(Untracked), Root(nullptr), RootDepth(0), FD(nullptr), PVD(nullptr) {
+        : S(Untracked), P(NotPinned), Root(nullptr), RootDepth(0), FD(nullptr), PVD(nullptr) {
     }
 
     USED_FUNC void dump() const {
@@ -83,20 +86,25 @@ public:
                      : (S == PotentiallyFreed) ? "PotentiallyFreed"
                      : (S == Untracked) ? "Untracked"
                      : "Error");
+      llvm::dbgs() << ((P == TransitivelyPinned) ? "TransitivelyPinned"
+                     : (P == Pinned) ? "Pinned"
+                     : (P == NotPinned) ? "NotPinned"
+                     : "Error");
       if (S == Rooted)
         llvm::dbgs() << "(" << RootDepth << ")";
       llvm::dbgs() << "\n";
     }
 
     bool operator==(const ValueState &VS) const {
-      return S == VS.S && Root == VS.Root && RootDepth == VS.RootDepth;
+      return S == VS.S && P == VS.P && Root == VS.Root && RootDepth == VS.RootDepth;
     }
     bool operator!=(const ValueState &VS) const {
-      return S != VS.S || Root != VS.Root || RootDepth != VS.RootDepth;
+      return S != VS.S || P != VS.P || Root != VS.Root || RootDepth != VS.RootDepth;
     }
 
     void Profile(llvm::FoldingSetNodeID &ID) const {
       ID.AddInteger(S);
+      ID.AddInteger(P);
       ID.AddPointer(Root);
       ID.AddInteger(RootDepth);
     }
@@ -111,17 +119,25 @@ public:
       return isRooted() && R == Root;
     }
 
+    bool isPinedByAnyway() const { return P == Pinned || P == TransitivelyPinned; }
+    bool isNotPinned() const { return P == NotPinned; }
+    bool isMoved() const { return P == Moved; }
+
+    static ValueState withMoved(ValueState old) {
+      return ValueState(old.S, Moved, old.Root, old.RootDepth, old.FD, old.PVD);
+    }
+
     static ValueState getAllocated() {
-      return ValueState(Allocated, nullptr, -1);
+      return ValueState(Allocated, NotPinned, nullptr, -1);
     }
     static ValueState getFreed() {
-      return ValueState(PotentiallyFreed, nullptr, -1);
+      return ValueState(PotentiallyFreed, NotPinned, nullptr, -1);
     }
     static ValueState getUntracked() {
-      return ValueState(Untracked, nullptr, -1);
+      return ValueState(Untracked, NotPinned, nullptr, -1);
     }
     static ValueState getRooted(const MemRegion *Root, int Depth) {
-      return ValueState(Rooted, Root, Depth);
+      return ValueState(Rooted, NotPinned, Root, Depth);
     }
     static ValueState getForArgument(const FunctionDecl *FD,
                                      const ParmVarDecl *PVD) {
@@ -161,6 +177,33 @@ public:
     static RootState getRoot(int Depth) { return RootState(Root, Depth); }
     static RootState getRootArray(int Depth) {
       return RootState(RootArray, Depth);
+    }
+  };
+
+  struct PinState {
+    enum Kind { TransitivePin, Pin } K;
+    int PinnedAtDept;
+
+    PinState(Kind InK, int Depth) : K(InK), PinnedAtDept(Depth) {}
+
+    bool operator==(const PinState &VS) const {
+      return K == VS.K && PinnedAtDept == VS.PinnedAtDept;
+    }
+    bool operator!=(const PinState &VS) const {
+      return K != VS.K || PinnedAtDept != VS.PinnedAtDept;
+    }
+
+    bool shouldPopAtDepth(int Depth) const { return Depth == PinnedAtDept; }
+    bool isTransitivePin() const { return K == TransitivePin; }
+
+    void Profile(llvm::FoldingSetNodeID &ID) const {
+      ID.AddInteger(K);
+      ID.AddInteger(PinnedAtDept);
+    }
+
+    static PinState getPin(int Depth) { return PinState(Pin, Depth); }
+    static PinState getTransitivePin(int Depth) {
+      return PinState(TransitivePin, Depth);
     }
   };
 
@@ -210,6 +253,9 @@ private:
                                    ProgramStateRef &State) const;
   SymbolRef getSymbolForResult(const Expr *Result, const ValueState *OldValS,
                                ProgramStateRef &State, CheckerContext &C) const;
+  void validateValue(const GCChecker::ValueState* VS, CheckerContext &C, SymbolRef Sym, const char *message) const;
+  void validateValue(const GCChecker::ValueState* VS, CheckerContext &C, SymbolRef Sym, const char *message, SourceRange range) const;
+  bool validateValueInner(const GCChecker::ValueState* VS) const;
 
 public:
   void checkBeginFunction(CheckerContext &Ctx) const;
@@ -271,6 +317,7 @@ REGISTER_TRAIT_WITH_PROGRAMSTATE(MayCallSafepoint, bool)
 REGISTER_MAP_WITH_PROGRAMSTATE(GCValueMap, SymbolRef, GCChecker::ValueState)
 REGISTER_MAP_WITH_PROGRAMSTATE(GCRootMap, const MemRegion *,
                                GCChecker::RootState)
+REGISTER_MAP_WITH_PROGRAMSTATE(GCPinMap, const MemRegion *, GCChecker::PinState)
 
 template <typename callback>
 SymbolRef GCChecker::walkToRoot(callback f, const ProgramStateRef &State,
@@ -330,6 +377,33 @@ static const VarRegion *walk_back_to_global_VR(const MemRegion *Region) {
   return nullptr;
 }
 } // namespace Helpers
+
+void GCChecker::validateValue(const ValueState* VS, CheckerContext &C, SymbolRef Sym, const char *message, SourceRange range) const {
+  if (!validateValueInner(VS)) {
+    GCChecker::report_value_error(C, Sym, message, range);
+  }
+}
+
+void GCChecker::validateValue(const ValueState* VS, CheckerContext &C, SymbolRef Sym, const char *message) const {
+  if (!validateValueInner(VS)) {
+    GCChecker::report_value_error(C, Sym, message);
+  }
+}
+
+bool GCChecker::validateValueInner(const ValueState* VS) const {
+  if (!VS)
+    return true;
+  
+  if (VS->isPotentiallyFreed()) {
+    return false;
+  }
+
+  if (VS->isMoved()) {
+    return false;
+  }
+
+  return true;
+}
 
 PDP GCChecker::GCBugVisitor::VisitNode(const ExplodedNode *N,
                                        BugReporterContext &BRC, PathSensitiveBugReport &BR) {
@@ -868,6 +942,16 @@ bool GCChecker::processPotentialSafepoint(const CallEvent &Call,
       DidChange = true;
     }
   }
+  // Symbolically move all unpinned values.
+  GCValueMapTy AMap2 = State->get<GCValueMap>();
+  for (auto I = AMap2.begin(), E = AMap2.end(); I != E; ++I) {
+    if (RetSym == I.getKey())
+      continue;
+    if (I.getData().isNotPinned()) {
+      State = State->set<GCValueMap>(I.getKey(), ValueState::withMoved(I.getData()));
+      DidChange = true;
+    }
+  }
   return DidChange;
 }
 
@@ -1130,10 +1214,8 @@ void GCChecker::checkDerivingExpr(const Expr *Result, const Expr *Parent,
     }
     return;
   }
-  if (OldValS->isPotentiallyFreed()) {
-    report_value_error(C, OldSym,
-                       "Creating derivative of value that may have been GCed");
-  } else if (ResultTracked) {
+  validateValue(OldValS, C, OldSym, "Creating derivative of value that may have been GCed");
+  if (!OldValS->isPotentiallyFreed() && ResultTracked) {
     C.addTransition(State->set<GCValueMap>(NewSym, *OldValS));
     return;
   }
