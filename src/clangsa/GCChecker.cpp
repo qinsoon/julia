@@ -255,7 +255,7 @@ private:
                                ProgramStateRef &State, CheckerContext &C) const;
   void validateValue(const GCChecker::ValueState* VS, CheckerContext &C, SymbolRef Sym, const char *message) const;
   void validateValue(const GCChecker::ValueState* VS, CheckerContext &C, SymbolRef Sym, const char *message, SourceRange range) const;
-  bool validateValueInner(const GCChecker::ValueState* VS) const;
+  int validateValueInner(const GCChecker::ValueState* VS) const;
 
 public:
   void checkBeginFunction(CheckerContext &Ctx) const;
@@ -378,31 +378,41 @@ static const VarRegion *walk_back_to_global_VR(const MemRegion *Region) {
 }
 } // namespace Helpers
 
+#define VALID 0
+#define FREED 1
+#define MOVED 2
+
 void GCChecker::validateValue(const ValueState* VS, CheckerContext &C, SymbolRef Sym, const char *message, SourceRange range) const {
-  if (!validateValueInner(VS)) {
-    GCChecker::report_value_error(C, Sym, message, range);
+  int v = validateValueInner(VS);
+  if (v == FREED) {
+    GCChecker::report_value_error(C, Sym, (std::string(message) + " GCed").c_str(), range);
+  } else if (v == MOVED) {
+    GCChecker::report_value_error(C, Sym, (std::string(message) + " moved").c_str(), range);
   }
 }
 
 void GCChecker::validateValue(const ValueState* VS, CheckerContext &C, SymbolRef Sym, const char *message) const {
-  if (!validateValueInner(VS)) {
-    GCChecker::report_value_error(C, Sym, message);
+  int v = validateValueInner(VS);
+  if (v == FREED) {
+    GCChecker::report_value_error(C, Sym, (std::string(message) + " GCed").c_str());
+  } else if (v == MOVED) {
+    GCChecker::report_value_error(C, Sym, (std::string(message) + " moved").c_str());
   }
 }
 
-bool GCChecker::validateValueInner(const ValueState* VS) const {
+int GCChecker::validateValueInner(const ValueState* VS) const {
   if (!VS)
-    return true;
+    return VALID;
   
   if (VS->isPotentiallyFreed()) {
-    return false;
+    return FREED;
   }
 
   if (VS->isMoved()) {
-    return false;
+    return MOVED;
   }
 
-  return true;
+  return VALID;
 }
 
 PDP GCChecker::GCBugVisitor::VisitNode(const ExplodedNode *N,
@@ -736,9 +746,7 @@ void GCChecker::checkEndFunction(const clang::ReturnStmt *RS,
     auto ResultVal = C.getSVal(RS->getRetValue());
     SymbolRef Sym = ResultVal.getAsSymbol(true);
     const ValueState *ValS = Sym ? State->get<GCValueMap>(Sym) : nullptr;
-    if (ValS && ValS->isPotentiallyFreed()) {
-      report_value_error(C, Sym, "Return value may have been GCed", RS->getSourceRange());
-    }
+    validateValue(ValS, C, Sym, "Return value may have been", RS->getSourceRange());
   }
 
   bool Changed = false;
@@ -1214,7 +1222,7 @@ void GCChecker::checkDerivingExpr(const Expr *Result, const Expr *Parent,
     }
     return;
   }
-  validateValue(OldValS, C, OldSym, "Creating derivative of value that may have been GCed");
+  validateValue(OldValS, C, OldSym, "Creating derivative of value that may have been");
   if (!OldValS->isPotentiallyFreed() && ResultTracked) {
     C.addTransition(State->set<GCValueMap>(NewSym, *OldValS));
     return;
@@ -1343,9 +1351,7 @@ void GCChecker::checkPreCall(const CallEvent &Call, CheckerContext &C) const {
       if (!isGCTracked(E))
         continue;
     }
-    if (ValState->isPotentiallyFreed()) {
-      report_value_error(C, Sym, "Argument value may have been GCed", range);
-    }
+    validateValue(ValState, C, Sym, "Argument value may have been", range);
     if (ValState->isRooted())
       continue;
     bool MaybeUnrooted = false;
@@ -1425,9 +1431,7 @@ bool GCChecker::evalCall(const CallEvent &Call, CheckerContext &C) const {
       const ValueState *ValState = State->get<GCValueMap>(Sym);
       if (!ValState)
         continue;
-      if (ValState->isPotentiallyFreed())
-        report_value_error(C, Sym,
-                           "Trying to root value which may have been GCed");
+      validateValue(ValState, C, Sym, "Trying to root value which may have been");
       if (!ValState->isRooted()) {
         State = State->set<GCValueMap>(
             Sym, ValueState::getRooted(Region, CurrentDepth));
@@ -1607,8 +1611,7 @@ void GCChecker::checkBind(SVal LVal, SVal RVal, const clang::Stmt *S,
                        "Saw assignment to root, but missed the allocation");
     return;
   }
-  if (RValState->isPotentiallyFreed())
-    report_value_error(C, Sym, "Trying to root value which may have been GCed");
+  validateValue(RValState, C, Sym, "Trying to root value which may have been");
   if (!RValState->isRooted() ||
       RValState->RootDepth > RootState->RootedAtDepth) {
     C.addTransition(State->set<GCValueMap>(
@@ -1692,10 +1695,7 @@ void GCChecker::checkLocation(SVal SLoc, bool IsLoad, const Stmt *S,
     DidChange &&C.addTransition(State);
     return;
   }
-  if (VState->isPotentiallyFreed()) {
-    report_value_error(C, Sym,
-                       "Trying to access value which may have been GCed");
-  }
+  validateValue(VState, C, Sym, "Trying to access value which may have been");
   DidChange &&C.addTransition(State);
 }
 
