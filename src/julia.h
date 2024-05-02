@@ -907,6 +907,24 @@ extern void _JL_GC_PUSHARGS(jl_value_t **, size_t) JL_NOTSAFEPOINT;
 
 extern void JL_GC_POP() JL_NOTSAFEPOINT;
 
+#ifdef MMTK_GC
+extern void JL_GC_PUSH1_NO_TPIN(void *) JL_NOTSAFEPOINT;
+extern void JL_GC_PUSH2_NO_TPIN(void *, void *) JL_NOTSAFEPOINT;
+extern void JL_GC_PUSH3_NO_TPIN(void *, void *, void *)  JL_NOTSAFEPOINT;
+extern void JL_GC_PUSH4_NO_TPIN(void *, void *, void *, void *)  JL_NOTSAFEPOINT;
+extern void JL_GC_PUSH5_NO_TPIN(void *, void *, void *, void *, void *)  JL_NOTSAFEPOINT;
+extern void JL_GC_PUSH7_NO_TPIN(void *, void *, void *, void *, void *, void *, void *)  JL_NOTSAFEPOINT;
+extern void JL_GC_PUSH8_NO_TPIN(void *, void *, void *, void *, void *, void *, void *, void *)  JL_NOTSAFEPOINT;
+extern void _JL_GC_PUSHARGS_NO_TPIN(jl_value_t **, size_t) JL_NOTSAFEPOINT;
+// This is necessary, because otherwise the analyzer considers this undefined
+// behavior and terminates the exploration
+#define JL_GC_PUSHARGS_NO_TPIN(rts_var, n)     \
+  rts_var = (jl_value_t **)alloca(sizeof(void*) * (n)); \
+  memset(rts_var, 0, sizeof(void*) * (n)); \
+  _JL_GC_PUSHARGS_NO_TPIN(rts_var, (n));
+
+#endif
+
 #else
 
 #define JL_GC_PUSH1(arg1)                                                                               \

@@ -123,8 +123,26 @@ public:
     bool isNotPinned() const { return P == NotPinned; }
     bool isMoved() const { return P == Moved; }
 
-    static ValueState withMoved(ValueState old) {
-      return ValueState(old.S, Moved, old.Root, old.RootDepth, old.FD, old.PVD);
+    static ValueState _getPinStateChanged(ValueState old, Pin P) {
+      return ValueState(old.S, P, old.Root, old.RootDepth, old.FD, old.PVD);
+    }
+    static ValueState getMoved(ValueState old) {
+      return _getPinStateChanged(old, Moved);
+    }
+    static ValueState getTransitivelyPinned(ValueState old) {
+      return _getPinStateChanged(old, TransitivelyPinned);
+    }
+    static ValueState getPinned(ValueState old) {
+      return _getPinStateChanged(old, Pinned);
+    }
+    static ValueState getNotPinned(ValueState old) {
+      return _getPinStateChanged(old, NotPinned);
+    }
+    static ValueState::Pin pinState(bool tpin) {
+      if (tpin)
+        return TransitivelyPinned;
+      else
+        return Pinned;
     }
 
     static ValueState getAllocated() {
@@ -138,6 +156,9 @@ public:
     }
     static ValueState getRooted(const MemRegion *Root, int Depth) {
       return ValueState(Rooted, NotPinned, Root, Depth);
+    }
+    static ValueState getRooted(const MemRegion *Root, Pin P, int Depth) {
+      return ValueState(Rooted, P, Root, Depth);
     }
     static ValueState getForArgument(const FunctionDecl *FD,
                                      const ParmVarDecl *PVD) {
@@ -181,7 +202,7 @@ public:
   };
 
   struct PinState {
-    enum Kind { TransitivePin, Pin } K;
+    enum Kind { TransitivePin, Pin, NoPin } K;
     int PinnedAtDept;
 
     PinState(Kind InK, int Depth) : K(InK), PinnedAtDept(Depth) {}
@@ -195,6 +216,8 @@ public:
 
     bool shouldPopAtDepth(int Depth) const { return Depth == PinnedAtDept; }
     bool isTransitivePin() const { return K == TransitivePin; }
+    bool isPin() const { return K == Pin; }
+    bool isNoPin() const { return K == NoPin; }
 
     void Profile(llvm::FoldingSetNodeID &ID) const {
       ID.AddInteger(K);
@@ -204,6 +227,9 @@ public:
     static PinState getPin(int Depth) { return PinState(Pin, Depth); }
     static PinState getTransitivePin(int Depth) {
       return PinState(TransitivePin, Depth);
+    }
+    static PinState getNoPin(int Depth) {
+      return PinState(NoPin, Depth);
     }
   };
 
@@ -231,6 +257,8 @@ private:
   static bool isGCTrackedType(QualType Type);
   static bool isGCTracked(const Expr *E);
   bool isGloballyRootedType(QualType Type) const;
+  bool isGloballyTransitivelyPinnedType(QualType Type) const;
+  bool isNonMovingType(QualType Type) const;
   static void dumpState(const ProgramStateRef &State);
   static bool declHasAnnotation(const clang::Decl *D, const char *which);
   static bool isFDAnnotatedNotSafepoint(const clang::FunctionDecl *FD);
@@ -256,6 +284,7 @@ private:
   void validateValue(const GCChecker::ValueState* VS, CheckerContext &C, SymbolRef Sym, const char *message) const;
   void validateValue(const GCChecker::ValueState* VS, CheckerContext &C, SymbolRef Sym, const char *message, SourceRange range) const;
   int validateValueInner(const GCChecker::ValueState* VS) const;
+  GCChecker::ValueState getRootedFromRegion(const MemRegion *Region, int Depth, ProgramStateRef State) const;
 
 public:
   void checkBeginFunction(CheckerContext &Ctx) const;
@@ -413,6 +442,25 @@ int GCChecker::validateValueInner(const ValueState* VS) const {
   }
 
   return VALID;
+}
+
+GCChecker::ValueState GCChecker::getRootedFromRegion(const MemRegion *Region, int Depth, ProgramStateRef State) const {
+  ValueState Ret = ValueState::getRooted(Region, Depth);
+
+  const PinState *PS = State->get<GCPinMap>(Region);
+  if (PS) {
+    if (PS->isTransitivePin()) {
+      Ret = ValueState::getTransitivelyPinned(Ret);
+    } else if (PS->isPin()) {
+      Ret = ValueState::getPinned(Ret);
+    } else if (PS->isNoPin()) {
+      Ret = ValueState::getNotPinned(Ret);
+    } else {
+      printf("Invalid PinState\n");
+    }
+  }
+
+  return Ret;
 }
 
 PDP GCChecker::GCBugVisitor::VisitNode(const ExplodedNode *N,
@@ -677,7 +725,7 @@ bool GCChecker::propagateArgumentRootedness(CheckerContext &C,
     }
     if (isGloballyRootedType(P->getType())) {
       State =
-          State->set<GCValueMap>(ParamSym, ValueState::getRooted(nullptr, -1));
+          State->set<GCValueMap>(ParamSym, ValueState::getRooted(nullptr, ValueState::pinState(isGloballyTransitivelyPinnedType(P->getType())), -1));
       Change = true;
       continue;
     }
@@ -722,6 +770,7 @@ void GCChecker::checkBeginFunction(CheckerContext &C) const {
       auto Param = State->getLValue(P, LCtx);
       const MemRegion *Root = State->getSVal(Param).getAsRegion();
       State = State->set<GCRootMap>(Root, RootState::getRoot(-1));
+      State = State->set<GCPinMap>(Root, PinState::getPin(-1));
     } else if (isGCTrackedType(P->getType())) {
       auto Param = State->getLValue(P, LCtx);
       SymbolRef AssignedSym = State->getSVal(Param).getAsSymbol();
@@ -851,6 +900,14 @@ bool GCChecker::isGloballyRootedType(QualType QT) const {
       [](StringRef Name) { return Name.endswith("jl_sym_t"); }, QT);
 }
 
+bool GCChecker::isGloballyTransitivelyPinnedType(QualType QT) const {
+  return false;
+}
+
+bool GCChecker::isNonMovingType(QualType QT) const {
+  return false;
+}
+
 bool GCChecker::isSafepoint(const CallEvent &Call) const {
   bool isCalleeSafepoint = true;
   if (Call.isInSystemHeader()) {
@@ -956,7 +1013,7 @@ bool GCChecker::processPotentialSafepoint(const CallEvent &Call,
     if (RetSym == I.getKey())
       continue;
     if (I.getData().isNotPinned()) {
-      State = State->set<GCValueMap>(I.getKey(), ValueState::withMoved(I.getData()));
+      State = State->set<GCValueMap>(I.getKey(), ValueState::getMoved(I.getData()));
       DidChange = true;
     }
   }
@@ -1021,7 +1078,7 @@ bool GCChecker::processAllocationOfResult(const CallEvent &Call,
     Sym = S.getAsSymbol();
   }
   if (isGloballyRootedType(QT))
-    State = State->set<GCValueMap>(Sym, ValueState::getRooted(nullptr, -1));
+    State = State->set<GCValueMap>(Sym, ValueState::getRooted(nullptr, ValueState::pinState(isGloballyTransitivelyPinnedType(QT)), -1));
   else {
     const ValueState *ValS = State->get<GCValueMap>(Sym);
     ValueState NewVState = ValS ? *ValS : ValueState::getAllocated();
@@ -1029,7 +1086,8 @@ bool GCChecker::processAllocationOfResult(const CallEvent &Call,
     const FunctionDecl *FD = Decl ? Decl->getAsFunction() : nullptr;
     if (FD) {
       if (declHasAnnotation(FD, "julia_globally_rooted")) {
-        NewVState = ValueState::getRooted(nullptr, -1);
+        // Globally rooted = at least pinned
+        NewVState = ValueState::getRooted(nullptr, ValueState::Pinned, -1);
       } else {
         // Special case for jl_box_ functions which have value-dependent
         // global roots.
@@ -1051,7 +1109,7 @@ bool GCChecker::processAllocationOfResult(const CallEvent &Call,
               }
             }
             if (GloballyRooted) {
-              NewVState = ValueState::getRooted(nullptr, -1);
+              NewVState = ValueState::getRooted(nullptr, ValueState::Pinned, -1);
             }
           }
         } else {
@@ -1094,7 +1152,7 @@ void GCChecker::checkPostStmt(const CStyleCastExpr *CE,
   if (!Sym)
     return;
   C.addTransition(
-      C.getState()->set<GCValueMap>(Sym, ValueState::getRooted(nullptr, -1)));
+      C.getState()->set<GCValueMap>(Sym, ValueState::getRooted(nullptr, ValueState::pinState(isGloballyTransitivelyPinnedType(CE->getTypeAsWritten())), -1)));
 }
 
 SymbolRef GCChecker::getSymbolForResult(const Expr *Result,
@@ -1144,7 +1202,7 @@ void GCChecker::checkDerivingExpr(const Expr *Result, const Expr *Parent,
       return;
     }
     C.addTransition(
-        State->set<GCValueMap>(NewSym, ValueState::getRooted(nullptr, -1)));
+        State->set<GCValueMap>(NewSym, ValueState::getRooted(nullptr, ValueState::pinState(isGloballyTransitivelyPinnedType(Result->getType())) -1)));
     return;
   }
   if (!isGCTracked(Result)) {
@@ -1187,7 +1245,7 @@ void GCChecker::checkDerivingExpr(const Expr *Result, const Expr *Parent,
   if (Region) {
     const VarRegion *VR = Region->getAs<VarRegion>();
     bool inheritedState = false;
-    ValueState Updated = ValueState::getRooted(Region, -1);
+    ValueState Updated = getRootedFromRegion(Region, -1, State);
     if (VR && isa<ParmVarDecl>(VR->getDecl())) {
       // This works around us not being able to track symbols for struct/union
       // parameters very well.
@@ -1240,7 +1298,7 @@ void GCChecker::checkPostStmt(const ArraySubscriptExpr *ASE,
     const RootState *RS =
         State->get<GCRootMap>(Region->getAs<ElementRegion>()->getSuperRegion());
     if (RS) {
-      ValueState ValS = ValueState::getRooted(Region, State->get<GCDepth>());
+      ValueState ValS = getRootedFromRegion(Region, State->get<GCDepth>(), State);
       SymbolRef NewSym = getSymbolForResult(ASE, &ValS, State, C);
       if (!NewSym) {
         return;
@@ -1262,7 +1320,7 @@ void GCChecker::checkPostStmt(const MemberExpr *ME, CheckerContext &C) const {
   ProgramStateRef State = C.getState();
   if (Region && isGCTracked(ME)) {
     if (const RootState *RS = State->get<GCRootMap>(Region)) {
-      ValueState ValS = ValueState::getRooted(Region, RS->RootedAtDepth);
+      ValueState ValS = getRootedFromRegion(Region, RS->RootedAtDepth, State);
       SymbolRef NewSym = getSymbolForResult(ME, &ValS, State, C);
       if (!NewSym)
         return;
@@ -1394,6 +1452,7 @@ bool GCChecker::evalCall(const CallEvent &Call, CheckerContext &C) const {
       if (I.getData().shouldPopAtDepth(CurrentDepth)) {
         PoppedRoots.push_back(I.getKey());
         State = State->remove<GCRootMap>(I.getKey());
+        State = State->remove<GCPinMap>(I.getKey());
       }
     }
     GCValueMapTy VMap = State->get<GCValueMap>();
@@ -1410,7 +1469,13 @@ bool GCChecker::evalCall(const CallEvent &Call, CheckerContext &C) const {
   } else if (name == "JL_GC_PUSH1" || name == "JL_GC_PUSH2" ||
              name == "JL_GC_PUSH3" || name == "JL_GC_PUSH4" ||
              name == "JL_GC_PUSH5" || name == "JL_GC_PUSH6" ||
-             name == "JL_GC_PUSH7" || name == "JL_GC_PUSH8") {
+             name == "JL_GC_PUSH7" || name == "JL_GC_PUSH8" ||
+             name == "JL_GC_PUSH1_NO_TPIN" || name == "JL_GC_PUSH2_NO_TPIN" ||
+             name == "JL_GC_PUSH3_NO_TPIN" || name == "JL_GC_PUSH4_NO_TPIN" ||
+             name == "JL_GC_PUSH5_NO_TPIN" || name == "JL_GC_PUSH6_NO_TPIN" ||
+             name == "JL_GC_PUSH7_NO_TPIN" || name == "JL_GC_PUSH8_NO_TPIN" ) {
+    // transitivelypin or pin
+    bool tpin = !name.endswith("_NO_TPIN");
     ProgramStateRef State = C.getState();
     // Transform slots to roots, transform values to rooted
     unsigned NumArgs = CE->getNumArgs();
@@ -1423,6 +1488,10 @@ bool GCChecker::evalCall(const CallEvent &Call, CheckerContext &C) const {
       }
       const MemRegion *Region = MRV->getRegion();
       State = State->set<GCRootMap>(Region, RootState::getRoot(CurrentDepth));
+      if (tpin)
+        State = State->set<GCPinMap>(Region, PinState::getTransitivePin(CurrentDepth));
+      else
+        State = State->set<GCPinMap>(Region, PinState::getPin(CurrentDepth));
       // Now for the value
       SVal Value = State->getSVal(Region);
       SymbolRef Sym = Value.getAsSymbol();
@@ -1432,16 +1501,23 @@ bool GCChecker::evalCall(const CallEvent &Call, CheckerContext &C) const {
       if (!ValState)
         continue;
       validateValue(ValState, C, Sym, "Trying to root value which may have been");
+      ValueState VS = *ValState;
       if (!ValState->isRooted()) {
-        State = State->set<GCValueMap>(
-            Sym, ValueState::getRooted(Region, CurrentDepth));
+        VS = ValueState::getRooted(Region, CurrentDepth);
       }
+      if (tpin)
+        VS = ValueState::getTransitivelyPinned(VS);
+      else
+        VS = ValueState::getPinned(VS);
+      State = State->set<GCValueMap>(Sym, VS);
     }
     CurrentDepth += 1;
     State = State->set<GCDepth>(CurrentDepth);
     C.addTransition(State);
     return true;
-  } else if (name == "_JL_GC_PUSHARGS") {
+  } else if (name == "_JL_GC_PUSHARGS" || name == "_JL_GC_PUSHARGS_NO_TPIN") {
+    // transitivelypin or pin
+    bool tpin = !name.endswith("_NO_TPIN");
     ProgramStateRef State = C.getState();
     SVal ArgArray = C.getSVal(CE->getArg(0));
     auto MRV = ArgArray.getAs<loc::MemRegionVal>();
@@ -1452,6 +1528,10 @@ bool GCChecker::evalCall(const CallEvent &Call, CheckerContext &C) const {
     const MemRegion *Region = MRV->getRegion()->StripCasts();
     State =
         State->set<GCRootMap>(Region, RootState::getRootArray(CurrentDepth));
+    if (tpin)
+        State = State->set<GCPinMap>(Region, PinState::getTransitivePin(CurrentDepth));
+    else
+        State = State->set<GCPinMap>(Region, PinState::getPin(CurrentDepth)); 
     // The Argument array may also be used as a value, so make it rooted
     // SymbolRef ArgArraySym = ArgArray.getAsSymbol();
     // assert(ArgArraySym);
@@ -1469,7 +1549,7 @@ bool GCChecker::evalCall(const CallEvent &Call, CheckerContext &C) const {
       return true;
     }
     C.addTransition(
-        C.getState()->set<GCValueMap>(Sym, ValueState::getRooted(nullptr, -1)));
+        C.getState()->set<GCValueMap>(Sym, ValueState::getRooted(nullptr, ValueState::Pinned -1)));
     return true;
   } else if (name == "jl_gc_push_arraylist") {
     CurrentDepth += 1;
@@ -1499,6 +1579,7 @@ bool GCChecker::evalCall(const CallEvent &Call, CheckerContext &C) const {
       // The items list is now rooted
       State = State->set<GCRootMap>(Items.getAsRegion(),
                                     RootState::getRootArray(CurrentDepth));
+      State = State->set<GCPinMap>(Items.getAsRegion(), PinState::getPin(CurrentDepth));
     }
     C.addTransition(State);
     return true;
@@ -1510,7 +1591,7 @@ bool GCChecker::evalCall(const CallEvent &Call, CheckerContext &C) const {
     if (!Sym)
       return true;
     C.addTransition(
-        State->set<GCValueMap>(Sym, ValueState::getRooted(nullptr, -1)));
+        State->set<GCValueMap>(Sym, ValueState::getRooted(nullptr, ValueState::Pinned, -1)));
     return true;
   } else if (name == "jl_gc_enable" || name == "ijl_gc_enable") {
     ProgramStateRef State = C.getState();
@@ -1615,7 +1696,7 @@ void GCChecker::checkBind(SVal LVal, SVal RVal, const clang::Stmt *S,
   if (!RValState->isRooted() ||
       RValState->RootDepth > RootState->RootedAtDepth) {
     C.addTransition(State->set<GCValueMap>(
-        Sym, ValueState::getRooted(R, RootState->RootedAtDepth)));
+        Sym, getRootedFromRegion(R, RootState->RootedAtDepth, State)));
   }
 }
 
@@ -1633,14 +1714,22 @@ bool GCChecker::rootRegionIfGlobal(const MemRegion *R, ProgramStateRef &State,
   if (!isGCTrackedType(VD->getType()))
     return false;
   bool isGlobalRoot = false;
+  ValueState::Pin pinState;
   if (declHasAnnotation(VD, "julia_globally_rooted") ||
       isGloballyRootedType(VD->getType())) {
     State = State->set<GCRootMap>(R, RootState::getRoot(-1));
+    if (isGloballyTransitivelyPinnedType(VD->getType())) {
+      State = State->set<GCPinMap>(R, PinState::getTransitivePin(-1));
+      pinState = ValueState::TransitivelyPinned;
+    } else {
+      State = State->set<GCPinMap>(R, PinState::getPin(-1));
+      pinState = ValueState::Pinned;
+    }
     isGlobalRoot = true;
   }
   SVal TheVal = State->getSVal(R);
   SymbolRef Sym = TheVal.getAsSymbol();
-  ValueState TheValS(isGlobalRoot ? ValueState::getRooted(R, -1)
+  ValueState TheValS(isGlobalRoot ? ValueState::getRooted(R, pinState, -1)
                                   : ValueState::getAllocated());
   if (ValS)
     *ValS = TheValS;
@@ -1668,7 +1757,7 @@ void GCChecker::checkLocation(SVal SLoc, bool IsLoad, const Stmt *S,
         DidChange = true;
         State = State->set<GCValueMap>(
             LoadedSym,
-            ValueState::getRooted(SLoc.getAsRegion(), RS->RootedAtDepth));
+            getRootedFromRegion(SLoc.getAsRegion(), RS->RootedAtDepth, State));
       }
     }
   }
