@@ -170,7 +170,8 @@ public:
         VS.FD = FD;
         return VS;
       }
-      return getRooted(nullptr, -1);
+      // Assume arguments are pinned
+      return getRooted(nullptr, ValueState::Pinned, -1);
     }
   };
 
@@ -217,6 +218,7 @@ public:
     bool shouldPopAtDepth(int Depth) const { return Depth == PinnedAtDept; }
     bool isTransitivePin() const { return K == TransitivePin; }
     bool isPin() const { return K == Pin; }
+    bool isAnyPin() const { return K == TransitivePin || K == Pin; }
     bool isNoPin() const { return K == NoPin; }
 
     void Profile(llvm::FoldingSetNodeID &ID) const {
@@ -457,6 +459,7 @@ GCChecker::ValueState GCChecker::getRootedFromRegion(const MemRegion *Region, in
       Ret = ValueState::getNotPinned(Ret);
     } else {
       printf("Invalid PinState\n");
+      exit(1);
     }
   }
 
@@ -1549,7 +1552,34 @@ bool GCChecker::evalCall(const CallEvent &Call, CheckerContext &C) const {
       return true;
     }
     C.addTransition(
-        C.getState()->set<GCValueMap>(Sym, ValueState::getRooted(nullptr, ValueState::Pinned -1)));
+        C.getState()->set<GCValueMap>(Sym, ValueState::getRooted(nullptr, ValueState::NotPinned -1)));
+    return true;
+  } else if (name == "PTR_PIN" || name == "PTRHASH_PIN") {
+    SVal Arg = C.getSVal(CE->getArg(0));
+    auto MRV = Arg.getAs<loc::MemRegionVal>();
+    if (!MRV) {
+      report_error(C, "PTR_PIN with something other than a local variable");
+      return true;
+    }
+    const MemRegion *Region = MRV->getRegion();
+    auto State = C.getState()->set<GCPinMap>(Region, PinState::getPin(CurrentDepth));
+    C.addTransition(State);
+    return true;
+  } else if (name == "PTR_UNPIN" || name == "PTRHASH_UNPIN") {
+    SVal Arg = C.getSVal(CE->getArg(0));
+    auto MRV = Arg.getAs<loc::MemRegionVal>();
+    if (!MRV) {
+      report_error(C, "PTR_UNPIN with something other than a local variable");
+      return true;
+    }
+    const MemRegion *Region = MRV->getRegion();
+    auto OldPinState = C.getState()->get<GCPinMap>(Region);
+    if (!OldPinState || !OldPinState->isPin()) {
+      report_error(C, "PTR_UNPIN with something that is not pinned");
+      return true;
+    }
+    auto State = C.getState()->set<GCPinMap>(Region, PinState::getNoPin(CurrentDepth));
+    C.addTransition(State);
     return true;
   } else if (name == "jl_gc_push_arraylist") {
     CurrentDepth += 1;

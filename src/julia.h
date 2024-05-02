@@ -5,24 +5,6 @@
 
 #ifdef LIBRARY_EXPORTS
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-extern int mmtk_object_is_managed_by_mmtk(void* addr);
-extern unsigned char mmtk_pin_object(void* obj);
-// FIXME: Pinning objects that get hashed in the ptrhash table
-// until we implement address space hashing.
-#ifdef MMTK_GC
-#define PTRHASH_PIN(key) mmtk_pin_object(key);
-#else
-#define PTRHASH_PIN(key)
-#endif
-
-#ifdef __cplusplus
-}
-#endif
-
 // Generated file, needs to be searched in include paths so that the builddir
 // retains priority
 #include <jl_internal_funcs.inc>
@@ -39,6 +21,32 @@ extern unsigned char mmtk_pin_object(void* obj);
 #include "htable.h"
 #include "arraylist.h"
 #include "analyzer_annotations.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+extern int mmtk_object_is_managed_by_mmtk(void* addr);
+extern unsigned char mmtk_pin_object(void* obj);
+extern unsigned char mmtk_unpin_object(void* obj);
+#ifdef __clang_gcanalyzer__
+extern void PTRHASH_PIN(void* key) JL_NOTSAFEPOINT;
+extern void PTRHASH_UNPIN(void* key) JL_NOTSAFEPOINT;
+#else
+// FIXME: Pinning objects that get hashed in the ptrhash table
+// until we implement address space hashing.
+#ifdef MMTK_GC
+#define PTRHASH_PIN(key) mmtk_pin_object(key);
+#define PTRHASH_UNPIN(key) mmtk_unpin_object(key);
+#else
+#define PTRHASH_PIN(key)
+#define PTRHASH_UNPIN(key)
+#endif
+#endif
+
+#ifdef __cplusplus
+}
+#endif
 
 #include <setjmp.h>
 #ifndef _OS_WINDOWS_

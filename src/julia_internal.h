@@ -9,10 +9,21 @@ extern "C" {
 
 extern int mmtk_object_is_managed_by_mmtk(void* addr);
 extern unsigned char mmtk_pin_object(void* obj);
+extern unsigned char mmtk_unpin_object(void* obj);
+
+#ifdef __clang_gcanalyzer__
+extern void PTR_PIN(void* key) JL_NOTSAFEPOINT;
+extern void PTR_UNPIN(void* key) JL_NOTSAFEPOINT;
+#else
+
 #ifdef MMTK_GC
 #define PTR_PIN(key) mmtk_pin_object(key);
+#define PTR_UNPIN(key) mmtk_unpin_object(key);
 #else
 #define PTR_PIN(key)
+#define PTR_UNPIN(key)
+#endif
+
 #endif
 
 #ifdef __cplusplus

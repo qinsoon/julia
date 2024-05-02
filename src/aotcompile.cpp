@@ -334,6 +334,7 @@ void *jl_create_native_impl(jl_array_t *methods, LLVMOrcThreadSafeModuleRef llvm
                 // find and prepare the source code to compile
                 jl_code_instance_t *codeinst = NULL;
                 jl_ci_cache_lookup(*cgparams, mi, params.world, &codeinst, &src);
+                PTR_PIN(codeinst->rettype);
                 if (src && !emitted.count(codeinst)) {
                     // now add it to our compilation results
                     JL_GC_PROMISE_ROOTED(codeinst->rettype);
@@ -345,6 +346,7 @@ void *jl_create_native_impl(jl_array_t *methods, LLVMOrcThreadSafeModuleRef llvm
                     if (result_m)
                         emitted[codeinst] = {std::move(result_m), std::move(decls)};
                 }
+                PTR_UNPIN(codeinst->rettype);
             }
         }
 
