@@ -6,7 +6,7 @@
 #include "julia_internal.h"
 
 extern void look_at_value(jl_value_t *v);
-extern void process_unrooted(jl_value_t *maybe_unrooted JL_MAYBE_UNROOTED);
+extern void process_unrooted(jl_value_t *maybe_unrooted JL_MAYBE_UNROOTED JL_MAYBE_UNPINNED);
 extern void jl_gc_safepoint();
 
 void unrooted_argument() {

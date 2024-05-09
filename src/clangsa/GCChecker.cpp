@@ -1,5 +1,9 @@
 // This file is a part of Julia. License is MIT: https://julialang.org/license
 
+// Assumptions for pinning:
+// * args need to be pinned
+// * JL_ROOTING_ARGUMENT and JL_ROOTED_ARGUMENT will propogate pinning state as well.
+
 #include "clang/Frontend/FrontendActions.h"
 #include "clang/StaticAnalyzer/Checkers/SValExplainer.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
@@ -86,13 +90,14 @@ public:
                      : (S == PotentiallyFreed) ? "PotentiallyFreed"
                      : (S == Untracked) ? "Untracked"
                      : "Error");
+      llvm::dbgs() << ",";
       llvm::dbgs() << ((P == TransitivelyPinned) ? "TransitivelyPinned"
                      : (P == Pinned) ? "Pinned"
                      : (P == NotPinned) ? "NotPinned"
                      : "Error");
+      llvm::dbgs() << ",";
       if (S == Rooted)
         llvm::dbgs() << "(" << RootDepth << ")";
-      llvm::dbgs() << "\n";
     }
 
     bool operator==(const ValueState &VS) const {
@@ -119,7 +124,9 @@ public:
       return isRooted() && R == Root;
     }
 
-    bool isPinedByAnyway() const { return P == Pinned || P == TransitivelyPinned; }
+    bool isPinnedByAnyway() const { return P == Pinned || P == TransitivelyPinned; }
+    bool isPinned() const { return P == Pinned; }
+    bool isTransitivelyPinned() const { return P == TransitivelyPinned; }
     bool isNotPinned() const { return P == NotPinned; }
     bool isMoved() const { return P == Moved; }
 
@@ -164,7 +171,8 @@ public:
                                      const ParmVarDecl *PVD) {
       bool isFunctionSafepoint = !isFDAnnotatedNotSafepoint(FD);
       bool maybeUnrooted = declHasAnnotation(PVD, "julia_maybe_unrooted");
-      if (!isFunctionSafepoint || maybeUnrooted) {
+      bool maybeUnpinned = declHasAnnotation(PVD, "julia_maybe_unpinned");
+      if (!isFunctionSafepoint || maybeUnrooted || maybeUnpinned) {
         ValueState VS = getAllocated();
         VS.PVD = PVD;
         VS.FD = FD;
@@ -200,22 +208,31 @@ public:
     static RootState getRootArray(int Depth) {
       return RootState(RootArray, Depth);
     }
+
+    void dump() const {
+      llvm::dbgs() << ((K == Root) ? "Root"
+                     : (K == RootArray) ? "RootArray"
+                     : "Error");
+      llvm::dbgs() << ",Depth=";
+      llvm::dbgs() << RootedAtDepth;
+      llvm::dbgs() << "\n";
+    }
   };
 
   struct PinState {
     enum Kind { TransitivePin, Pin, NoPin } K;
-    int PinnedAtDept;
+    int PinnedAtDepth;
 
-    PinState(Kind InK, int Depth) : K(InK), PinnedAtDept(Depth) {}
+    PinState(Kind InK, int Depth) : K(InK), PinnedAtDepth(Depth) {}
 
     bool operator==(const PinState &VS) const {
-      return K == VS.K && PinnedAtDept == VS.PinnedAtDept;
+      return K == VS.K && PinnedAtDepth == VS.PinnedAtDepth;
     }
     bool operator!=(const PinState &VS) const {
-      return K != VS.K || PinnedAtDept != VS.PinnedAtDept;
+      return K != VS.K || PinnedAtDepth != VS.PinnedAtDepth;
     }
 
-    bool shouldPopAtDepth(int Depth) const { return Depth == PinnedAtDept; }
+    bool shouldPopAtDepth(int Depth) const { return Depth == PinnedAtDepth; }
     bool isTransitivePin() const { return K == TransitivePin; }
     bool isPin() const { return K == Pin; }
     bool isAnyPin() const { return K == TransitivePin || K == Pin; }
@@ -223,7 +240,7 @@ public:
 
     void Profile(llvm::FoldingSetNodeID &ID) const {
       ID.AddInteger(K);
-      ID.AddInteger(PinnedAtDept);
+      ID.AddInteger(PinnedAtDepth);
     }
 
     static PinState getPin(int Depth) { return PinState(Pin, Depth); }
@@ -232,6 +249,15 @@ public:
     }
     static PinState getNoPin(int Depth) {
       return PinState(NoPin, Depth);
+    }
+
+    void dump() const {
+      llvm::dbgs() << ((K == TransitivePin) ? "TransitivePin"
+                     : (K == Pin) ? "Pin"
+                     : (K == NoPin) ? "NoPin"
+                     : "Error");
+      llvm::dbgs() << ",Depth=";
+      llvm::dbgs() << PinnedAtDepth;
     }
   };
 
@@ -286,7 +312,7 @@ private:
   void validateValue(const GCChecker::ValueState* VS, CheckerContext &C, SymbolRef Sym, const char *message) const;
   void validateValue(const GCChecker::ValueState* VS, CheckerContext &C, SymbolRef Sym, const char *message, SourceRange range) const;
   int validateValueInner(const GCChecker::ValueState* VS) const;
-  GCChecker::ValueState getRootedFromRegion(const MemRegion *Region, int Depth, ProgramStateRef State) const;
+  GCChecker::ValueState getRootedFromRegion(const MemRegion *Region, const PinState *PS, int Depth) const;
 
 public:
   void checkBeginFunction(CheckerContext &Ctx) const;
@@ -446,10 +472,9 @@ int GCChecker::validateValueInner(const ValueState* VS) const {
   return VALID;
 }
 
-GCChecker::ValueState GCChecker::getRootedFromRegion(const MemRegion *Region, int Depth, ProgramStateRef State) const {
+GCChecker::ValueState GCChecker::getRootedFromRegion(const MemRegion *Region, const PinState *PS, int Depth) const {
   ValueState Ret = ValueState::getRooted(Region, Depth);
 
-  const PinState *PS = State->get<GCPinMap>(Region);
   if (PS) {
     if (PS->isTransitivePin()) {
       Ret = ValueState::getTransitivelyPinned(Ret);
@@ -1049,8 +1074,10 @@ bool GCChecker::processArgumentRooting(const CallEvent &Call, CheckerContext &C,
   for (unsigned i = 0; i < FD->getNumParams(); ++i) {
     if (declHasAnnotation(FD->getParamDecl(i), "julia_rooting_argument")) {
       RootingRegion = Call.getArgSVal(i).getAsRegion();
+      llvm::errs() << "- Rooting arg: "; Call.getArgSVal(i).dump(); llvm::errs() << "\n";
     } else if (declHasAnnotation(FD->getParamDecl(i),
                                  "julia_rooted_argument")) {
+      llvm::errs() << "- Rooted arg: "; Call.getArgSVal(i).dump(); llvm::errs() << "\n";
       RootedSymbol = Call.getArgSVal(i).getAsSymbol();
     }
   }
@@ -1060,7 +1087,14 @@ bool GCChecker::processArgumentRooting(const CallEvent &Call, CheckerContext &C,
       getValStateForRegion(C.getASTContext(), State, RootingRegion);
   if (!OldVState)
     return false;
-  State = State->set<GCValueMap>(RootedSymbol, *OldVState);
+  const ValueState *CurrentVState = State->get<GCValueMap>(RootedSymbol);
+  ValueState NewVState = *OldVState;
+  // If the old state is pinned, the new state is not pinned.
+  if (OldVState->isPinned() && ((CurrentVState && CurrentVState->isPinnedByAnyway()) || !CurrentVState)) {
+    NewVState = ValueState::getNotPinned(*OldVState);
+  }
+  llvm::errs() << "- Rooted set to "; NewVState.dump(); llvm::errs() << "\n";
+  State = State->set<GCValueMap>(RootedSymbol, NewVState);
   return true;
 }
 
@@ -1138,6 +1172,7 @@ bool GCChecker::processAllocationOfResult(const CallEvent &Call,
 }
 
 void GCChecker::checkPostCall(const CallEvent &Call, CheckerContext &C) const {
+  llvm::errs() << "checkPostCall: "; Call.dump(); llvm::errs() << "\n";
   ProgramStateRef State = C.getState();
   bool didChange = processArgumentRooting(Call, C, State);
   didChange |= processPotentialSafepoint(Call, C, State);
@@ -1185,6 +1220,7 @@ SymbolRef GCChecker::getSymbolForResult(const Expr *Result,
 
 void GCChecker::checkDerivingExpr(const Expr *Result, const Expr *Parent,
                                   bool ParentIsLoc, CheckerContext &C) const {
+  llvm::errs() << "checkDerivingExpr\n";
   if (auto PE = dyn_cast<ParenExpr>(Parent)) {
     Parent = PE->getSubExpr();
   }
@@ -1248,7 +1284,7 @@ void GCChecker::checkDerivingExpr(const Expr *Result, const Expr *Parent,
   if (Region) {
     const VarRegion *VR = Region->getAs<VarRegion>();
     bool inheritedState = false;
-    ValueState Updated = getRootedFromRegion(Region, -1, State);
+    ValueState Updated = getRootedFromRegion(Region, State->get<GCPinMap>(Region), -1);
     if (VR && isa<ParmVarDecl>(VR->getDecl())) {
       // This works around us not being able to track symbols for struct/union
       // parameters very well.
@@ -1293,23 +1329,29 @@ void GCChecker::checkDerivingExpr(const Expr *Result, const Expr *Parent,
 // Propagate rootedness through subscript
 void GCChecker::checkPostStmt(const ArraySubscriptExpr *ASE,
                               CheckerContext &C) const {
+  llvm::errs() << "checkPostStmt(ArraySubscriptExpr): "; ASE->dump(); llvm::errs() << "\n";
   // Could be a root array, in which case this should be considered rooted
   // by that array.
   const MemRegion *Region = C.getSVal(ASE->getLHS()).getAsRegion();
   ProgramStateRef State = C.getState();
   if (Region && Region->getAs<ElementRegion>() && isGCTracked(ASE)) {
-    const RootState *RS =
-        State->get<GCRootMap>(Region->getAs<ElementRegion>()->getSuperRegion());
+    auto SuperRegion = Region->getAs<ElementRegion>()->getSuperRegion();
+    const RootState *RS = State->get<GCRootMap>(SuperRegion);
+    const PinState *PS = State->get<GCPinMap>(SuperRegion);
     if (RS) {
-      ValueState ValS = getRootedFromRegion(Region, State->get<GCDepth>(), State);
+      ValueState ValS = getRootedFromRegion(Region, PS, State->get<GCDepth>());
       SymbolRef NewSym = getSymbolForResult(ASE, &ValS, State, C);
       if (!NewSym) {
         return;
       }
       const ValueState *ExistingValS = State->get<GCValueMap>(NewSym);
+      if (ExistingValS) {
+        llvm::errs() << "- Find existingVS: "; ExistingValS->dump(); llvm::errs() << "\n";
+      }
       if (ExistingValS && ExistingValS->isRooted() &&
           ExistingValS->RootDepth < ValS.RootDepth)
         return;
+      llvm::errs() << "- Set value state: "; ValS.dump(); llvm::errs() << "\n";
       C.addTransition(State->set<GCValueMap>(NewSym, ValS));
       return;
     }
@@ -1318,12 +1360,13 @@ void GCChecker::checkPostStmt(const ArraySubscriptExpr *ASE,
 }
 
 void GCChecker::checkPostStmt(const MemberExpr *ME, CheckerContext &C) const {
+  llvm::errs() << "checkPostStmt(MemberExpr): "; ME->dump(); llvm::errs() << "\n";
   // It is possible for the member itself to be gcrooted, so check that first
   const MemRegion *Region = C.getSVal(ME).getAsRegion();
   ProgramStateRef State = C.getState();
   if (Region && isGCTracked(ME)) {
     if (const RootState *RS = State->get<GCRootMap>(Region)) {
-      ValueState ValS = getRootedFromRegion(Region, RS->RootedAtDepth, State);
+      ValueState ValS = getRootedFromRegion(Region, State->get<GCPinMap>(Region), RS->RootedAtDepth);
       SymbolRef NewSym = getSymbolForResult(ME, &ValS, State, C);
       if (!NewSym)
         return;
@@ -1361,6 +1404,9 @@ USED_FUNC void GCChecker::dumpState(const ProgramStateRef &State) {
 void GCChecker::checkPreCall(const CallEvent &Call, CheckerContext &C) const {
   if (!gcEnabledHere(C))
     return;
+  llvm::errs() << "checkPreCall: ";
+  Call.dump();
+  llvm::errs() << "\n";
   unsigned NumArgs = Call.getNumArgs();
   ProgramStateRef State = C.getState();
   bool isCalleeSafepoint = isSafepoint(Call);
@@ -1386,8 +1432,12 @@ void GCChecker::checkPreCall(const CallEvent &Call, CheckerContext &C) const {
   if (FD && FD->getDeclName().isIdentifier() &&
       FD->getName() == "JL_GC_PROMISE_ROOTED")
     return;
+  if (FD && FD->getDeclName().isIdentifier() &&
+      (FD->getName() == "PTR_PIN" || FD->getName() == "PTR_UNPIN"))
+    return;
   for (unsigned idx = 0; idx < NumArgs; ++idx) {
     SVal Arg = Call.getArgSVal(idx);
+    llvm::errs() << "- Argument SVal: "; Arg.dump(); llvm::errs() << "\n";
     SymbolRef Sym = Arg.getAsSymbol();
     // Hack to work around passing unions/structs by value.
     if (auto LCV = Arg.getAs<nonloc::LazyCompoundVal>()) {
@@ -1401,32 +1451,51 @@ void GCChecker::checkPreCall(const CallEvent &Call, CheckerContext &C) const {
         }
       }
     }
-    if (!Sym)
+    if (!Sym) {
+      llvm::errs() << "- No Sym\n";
       continue;
+    }
     auto *ValState = State->get<GCValueMap>(Sym);
-    if (!ValState)
+    if (!ValState) {
+      llvm::errs() << "- No ValState\n";
       continue;
+    }
     SourceRange range;
     if (const Expr *E = Call.getArgExpr(idx)) {
       range = E->getSourceRange();
-      if (!isGCTracked(E))
+      if (!isGCTracked(E)) {
+        llvm::errs() << "- Not GCTracked\n";
         continue;
-    }
-    validateValue(ValState, C, Sym, "Argument value may have been", range);
-    if (ValState->isRooted())
-      continue;
-    bool MaybeUnrooted = false;
-    if (FD) {
-      if (idx < FD->getNumParams()) {
-        MaybeUnrooted =
-            declHasAnnotation(FD->getParamDecl(idx), "julia_maybe_unrooted");
       }
     }
-    if (!MaybeUnrooted && isCalleeSafepoint) {
-      report_value_error(
-          C, Sym,
-          "Passing non-rooted value as argument to function that may GC",
-          range);
+    llvm::errs() << "- ValState: "; ValState->dump(); llvm::errs() << "\n";
+    validateValue(ValState, C, Sym, "Argument value may have been", range);
+    if (!ValState->isRooted()) {
+      bool MaybeUnrooted = false;
+      if (FD) {
+        if (idx < FD->getNumParams()) {
+          MaybeUnrooted =
+              declHasAnnotation(FD->getParamDecl(idx), "julia_maybe_unrooted");
+        }
+      }
+      if (!MaybeUnrooted && isCalleeSafepoint) {
+        report_value_error(
+            C, Sym,
+            "Passing non-rooted value as argument to function that may GC",
+            range);
+      }      
+    }
+    if (ValState->isNotPinned()) {
+      bool MaybeUnpinned = false;
+      if (FD) {
+        if (idx < FD->getNumParams()) {
+          MaybeUnpinned =
+              declHasAnnotation(FD->getParamDecl(idx), "julia_maybe_unpinned");
+        }
+      }
+      if (!MaybeUnpinned && isCalleeSafepoint) {
+        report_value_error(C, Sym, "Passing non-pinned value as argument to function that may GC", range);
+      }
     }
   }
 }
@@ -1438,6 +1507,9 @@ bool GCChecker::evalCall(const CallEvent &Call, CheckerContext &C) const {
   if (!CE)
     return false;
   unsigned CurrentDepth = C.getState()->get<GCDepth>();
+  llvm::errs() << "evalCall: ";
+  Call.dump();
+  llvm::errs() << "\n";
   auto name = C.getCalleeName(CE);
   if (name == "JL_GC_POP") {
     if (CurrentDepth == 0) {
@@ -1531,15 +1603,23 @@ bool GCChecker::evalCall(const CallEvent &Call, CheckerContext &C) const {
     const MemRegion *Region = MRV->getRegion()->StripCasts();
     State =
         State->set<GCRootMap>(Region, RootState::getRootArray(CurrentDepth));
-    if (tpin)
-        State = State->set<GCPinMap>(Region, PinState::getTransitivePin(CurrentDepth));
-    else
-        State = State->set<GCPinMap>(Region, PinState::getPin(CurrentDepth)); 
+    if (tpin) {
+      llvm::errs() << "- Root and transitive pin: "; Region->dump(); llvm::errs() << "\n";
+      State = State->set<GCPinMap>(Region, PinState::getTransitivePin(CurrentDepth));
+    } else {
+      llvm::errs() << "- Root and pin: "; Region->dump(); llvm::errs() << "\n";
+      State = State->set<GCPinMap>(Region, PinState::getPin(CurrentDepth)); 
+    }
     // The Argument array may also be used as a value, so make it rooted
     // SymbolRef ArgArraySym = ArgArray.getAsSymbol();
     // assert(ArgArraySym);
-    // State = State->set<GCValueMap>(ArgArraySym, ValueState::getRooted(Region,
-    // CurrentDepth));
+    // ValueState VS = ValueState::getRooted(Region, CurrentDepth);
+    // if (tpin) {
+    //   VS = ValueState::getTransitivelyPinned(VS);
+    // } else {
+    //   VS = ValueState::getPinned(VS);
+    // }
+    // State = State->set<GCValueMap>(ArgArraySym, VS);
     CurrentDepth += 1;
     State = State->set<GCDepth>(CurrentDepth);
     C.addTransition(State);
@@ -1556,6 +1636,11 @@ bool GCChecker::evalCall(const CallEvent &Call, CheckerContext &C) const {
     return true;
   } else if (name == "PTR_PIN" || name == "PTRHASH_PIN") {
     SVal Arg = C.getSVal(CE->getArg(0));
+    SymbolRef Sym = Arg.getAsSymbol();
+    if (!Sym) {
+      report_error(C, "Can not understand this pin.");
+      return true;
+    }
     auto MRV = Arg.getAs<loc::MemRegionVal>();
     if (!MRV) {
       report_error(C, "PTR_PIN with something other than a local variable");
@@ -1563,22 +1648,42 @@ bool GCChecker::evalCall(const CallEvent &Call, CheckerContext &C) const {
     }
     const MemRegion *Region = MRV->getRegion();
     auto State = C.getState()->set<GCPinMap>(Region, PinState::getPin(CurrentDepth));
+    llvm::errs() << "- Pin region: "; Region->dump(); llvm::errs() << "\n";
+    const ValueState *OldVS = State->get<GCValueMap>(Sym);
+    State = State->set<GCValueMap>(Sym, ValueState::getPinned(*OldVS));
+    llvm::errs() << "- Pin value: "; Sym->dump(); llvm::errs() << "\n";
     C.addTransition(State);
     return true;
   } else if (name == "PTR_UNPIN" || name == "PTRHASH_UNPIN") {
     SVal Arg = C.getSVal(CE->getArg(0));
+    SymbolRef Sym = Arg.getAsSymbol();
+    if (!Sym) {
+      report_error(C, "Can not understand this unpin.");
+      return true;
+    }
     auto MRV = Arg.getAs<loc::MemRegionVal>();
     if (!MRV) {
       report_error(C, "PTR_UNPIN with something other than a local variable");
       return true;
     }
     const MemRegion *Region = MRV->getRegion();
+    auto State = C.getState();
     auto OldPinState = C.getState()->get<GCPinMap>(Region);
+    llvm::errs() << "- Old pin state: "; OldPinState->dump(); llvm::errs() << "\n";
     if (!OldPinState || !OldPinState->isPin()) {
-      report_error(C, "PTR_UNPIN with something that is not pinned");
+      report_error(C, "PTR_UNPIN with a region that is not pinned");
       return true;
     }
-    auto State = C.getState()->set<GCPinMap>(Region, PinState::getNoPin(CurrentDepth));
+    const ValueState *OldVS = State->get<GCValueMap>(Sym);
+    llvm::errs() << "- Old value state: "; OldVS->dump(); llvm::errs() << "\n";
+    if (!OldVS || !OldVS->isPinned()) {
+      report_error(C, "PTR_UNPIN with a value that is not pinned");
+      return true;
+    }
+    State = State->set<GCPinMap>(Region, PinState::getNoPin(CurrentDepth));
+    llvm::errs() << "- Unpin region: "; Region->dump(); llvm::errs() << "\n";
+    State = State->set<GCValueMap>(Sym, ValueState::getNotPinned(*OldVS));
+    llvm::errs() << "- Unpin value: "; Sym->dump(); llvm::errs() << "\n";
     C.addTransition(State);
     return true;
   } else if (name == "jl_gc_push_arraylist") {
@@ -1669,9 +1774,11 @@ bool GCChecker::evalCall(const CallEvent &Call, CheckerContext &C) const {
 
 void GCChecker::checkBind(SVal LVal, SVal RVal, const clang::Stmt *S,
                           CheckerContext &C) const {
+  llvm::errs() << "checkBind: "; LVal.dump(); llvm::errs() << " = "; RVal.dump(); llvm::errs() << "\n";
   auto State = C.getState();
   const MemRegion *R = LVal.getAsRegion();
   if (!R) {
+    llvm::errs() << "- LValue is not a region, return\n";
     return;
   }
   bool shouldBeRootArray = false;
@@ -1682,9 +1789,15 @@ void GCChecker::checkBind(SVal LVal, SVal RVal, const clang::Stmt *S,
   }
   SymbolRef Sym = RVal.getAsSymbol();
   if (!Sym) {
+    llvm::errs() << "- No Sym\n";
     return;
   }
   const auto *RootState = State->get<GCRootMap>(R);
+  if (RootState) {
+    llvm::errs() << "- RootState for "; R->dump(); llvm::errs() << ": "; RootState->dump(); llvm::errs() << "\n";
+  } else {
+    llvm::errs() << "- RootState for "; R->dump(); llvm::errs() << ": null\n";
+  }
   if (!RootState) {
     const ValueState *ValSP = nullptr;
     ValueState ValS;
@@ -1693,40 +1806,47 @@ void GCChecker::checkBind(SVal LVal, SVal RVal, const clang::Stmt *S,
     } else {
       ValSP = getValStateForRegion(C.getASTContext(), State, R);
     }
-    if (!ValSP || !ValSP->isRooted()) {
+    if (ValSP && ValSP->isRooted()) {
+      llvm::errs() << "- Found base region that is rooted: "; ValSP->dump(); llvm::errs() << "\n";
+      const auto *RValState = State->get<GCValueMap>(Sym);
+      if (RValState && RValState->isRooted() &&
+          RValState->RootDepth < ValSP->RootDepth) {
+        llvm::errs() << "- No need to set ValState, current ValState: "; RValState->dump(); llvm::errs() << "\n";
+      } else {
+        llvm::errs() << "- Set ValState, current ValState: "; ValSP->dump(); llvm::errs() << "\n";
+        C.addTransition(State->set<GCValueMap>(Sym, *ValSP));
+      }
+    }
+  } else {
+    if (shouldBeRootArray && !RootState->isRootArray()) {
+      report_error(
+          C, "This assignment looks weird. Expected a root array on the LHS.");
       return;
     }
     const auto *RValState = State->get<GCValueMap>(Sym);
-    if (RValState && RValState->isRooted() &&
-        RValState->RootDepth < ValSP->RootDepth)
-      return;
-    C.addTransition(State->set<GCValueMap>(Sym, *ValSP));
-    return;
-  }
-  if (shouldBeRootArray && !RootState->isRootArray()) {
-    report_error(
-        C, "This assignment looks weird. Expected a root array on the LHS.");
-    return;
-  }
-  const auto *RValState = State->get<GCValueMap>(Sym);
-  if (!RValState) {
-    if (rootRegionIfGlobal(Sym->getOriginRegion(), State, C)) {
-      C.addTransition(State);
-      return;
+    if (!RValState) {
+      if (rootRegionIfGlobal(Sym->getOriginRegion(), State, C)) {
+        llvm::errs() << "- Cannot find ValState for Sym, root it as global\n";
+        C.addTransition(State);
+      } else {
+        Sym->dump();
+        if (auto *SC = dyn_cast<SymbolConjured>(Sym)) {
+          SC->getStmt()->dump();
+        }
+        report_value_error(C, Sym,
+                          "Saw assignment to root, but missed the allocation");
+      }      
+    } else {
+      llvm::errs() << "- Found ValState for Sym:"; RValState->dump(); llvm::errs() << "\n";
+      validateValue(RValState, C, Sym, "Trying to root value which may have been");
+      if (!RValState->isRooted() ||
+          RValState->RootDepth > RootState->RootedAtDepth) {
+        auto NewVS = getRootedFromRegion(R, State->get<GCPinMap>(R), RootState->RootedAtDepth);
+        llvm::errs() << "- getRootedFromRegion: "; NewVS.dump(); llvm::errs() << "\n";
+        C.addTransition(State->set<GCValueMap>(
+            Sym, NewVS));
+      }
     }
-    Sym->dump();
-    if (auto *SC = dyn_cast<SymbolConjured>(Sym)) {
-      SC->getStmt()->dump();
-    }
-    report_value_error(C, Sym,
-                       "Saw assignment to root, but missed the allocation");
-    return;
-  }
-  validateValue(RValState, C, Sym, "Trying to root value which may have been");
-  if (!RValState->isRooted() ||
-      RValState->RootDepth > RootState->RootedAtDepth) {
-    C.addTransition(State->set<GCValueMap>(
-        Sym, getRootedFromRegion(R, RootState->RootedAtDepth, State)));
   }
 }
 
@@ -1787,7 +1907,7 @@ void GCChecker::checkLocation(SVal SLoc, bool IsLoad, const Stmt *S,
         DidChange = true;
         State = State->set<GCValueMap>(
             LoadedSym,
-            getRootedFromRegion(SLoc.getAsRegion(), RS->RootedAtDepth, State));
+            getRootedFromRegion(SLoc.getAsRegion(), State->get<GCPinMap>(SLoc.getAsRegion()), RS->RootedAtDepth));
       }
     }
   }

@@ -13,6 +13,7 @@
 #define JL_PROPAGATES_ROOT __attribute__((annotate("julia_propagates_root")))
 #define JL_NOTSAFEPOINT __attribute__((annotate("julia_not_safepoint")))
 #define JL_MAYBE_UNROOTED __attribute__((annotate("julia_maybe_unrooted")))
+#define JL_MAYBE_UNPINNED __attribute__((annotate("julia_maybe_unpinned")))
 #define JL_GLOBALLY_ROOTED __attribute__((annotate("julia_globally_rooted")))
 #define JL_ROOTING_ARGUMENT __attribute__((annotate("julia_rooting_argument")))
 #define JL_ROOTED_ARGUMENT __attribute__((annotate("julia_rooted_argument")))
@@ -34,6 +35,7 @@ extern "C" {
 #define JL_PROPAGATES_ROOT
 #define JL_NOTSAFEPOINT
 #define JL_MAYBE_UNROOTED
+#define JL_MAYBE_UNPINNED
 #define JL_GLOBALLY_ROOTED
 #define JL_ROOTING_ARGUMENT
 #define JL_ROOTED_ARGUMENT
