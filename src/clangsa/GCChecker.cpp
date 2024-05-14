@@ -3,6 +3,7 @@
 // Assumptions for pinning:
 // * args need to be pinned
 // * JL_ROOTING_ARGUMENT and JL_ROOTED_ARGUMENT will propogate pinning state as well.
+// * globally rooted means pinned as well (not T pin).
 
 #include "clang/Frontend/FrontendActions.h"
 #include "clang/StaticAnalyzer/Checkers/SValExplainer.h"
@@ -1232,19 +1233,24 @@ void GCChecker::checkDerivingExpr(const Expr *Result, const Expr *Parent,
   bool ResultTracked = true;
   ProgramStateRef State = C.getState();
   if (isGloballyRootedType(Result->getType())) {
+    llvm::errs() << "- Globally rooted\n";
     SymbolRef NewSym = getSymbolForResult(Result, nullptr, State, C);
     if (!NewSym) {
       return;
     }
     const ValueState *NewValS = State->get<GCValueMap>(NewSym);
     if (NewValS && NewValS->isRooted() && NewValS->RootDepth == -1) {
+      llvm::errs() << "- NewValS is already rooted, skip: "; NewValS->dump(); llvm::errs() << "\n";
       return;
     }
+    ValueState VS = ValueState::getRooted(nullptr, ValueState::pinState(isGloballyTransitivelyPinnedType(Result->getType())), -1);
+    llvm::errs() << "- Set VS as: "; VS.dump(); llvm::errs() << "\n";
     C.addTransition(
-        State->set<GCValueMap>(NewSym, ValueState::getRooted(nullptr, ValueState::pinState(isGloballyTransitivelyPinnedType(Result->getType())) -1)));
+        State->set<GCValueMap>(NewSym, VS));
     return;
   }
   if (!isGCTracked(Result)) {
+    llvm::errs() << "- Not GC tracked\n";
     // TODO: We may want to refine this. This is to track pointers through the
     // array list in jl_module_t.
     bool ParentIsModule = isJuliaType(
@@ -1261,6 +1267,7 @@ void GCChecker::checkDerivingExpr(const Expr *Result, const Expr *Parent,
   auto ResultVal = C.getSVal(Result);
   if (ResultVal.isUnknown()) {
     if (!Result->getType()->isPointerType()) {
+      llvm::errs() << "- Result is not pointer type\n";
       return;
     }
     ResultVal = C.getSValBuilder().conjureSymbolVal(
@@ -1269,23 +1276,33 @@ void GCChecker::checkDerivingExpr(const Expr *Result, const Expr *Parent,
     State = State->BindExpr(Result, C.getLocationContext(), ResultVal);
   }
   auto ValLoc = ResultVal.getAs<Loc>();
-  if (!ValLoc)
+  if (!ValLoc) {
+    llvm::errs() << "- Result is not a Loc\n";
     return;
+  }
   SVal ParentVal = C.getSVal(Parent);
   SymbolRef OldSym = ParentVal.getAsSymbol(true);
   const MemRegion *Region = C.getSVal(Parent).getAsRegion();
   const ValueState *OldValS = OldSym ? State->get<GCValueMap>(OldSym) : nullptr;
+  if (OldValS) {
+    llvm::errs() << "- OldSym: "; OldSym->dump(); llvm::errs() << " OldValS: "; OldValS->dump(); llvm::errs() << "\n";
+  } else {
+    llvm::errs() << "- OlsValS: unknown\n";
+  }
   SymbolRef NewSym = getSymbolForResult(Result, OldValS, State, C);
   if (!NewSym) {
     return;
   }
+  llvm::errs() << "- Looking at NewSym: "; NewSym->dump(); llvm::errs() << "\n";
   // NewSym might already have a better root
   const ValueState *NewValS = State->get<GCValueMap>(NewSym);
   if (Region) {
     const VarRegion *VR = Region->getAs<VarRegion>();
     bool inheritedState = false;
     ValueState Updated = getRootedFromRegion(Region, State->get<GCPinMap>(Region), -1);
+    llvm::errs() << "- getRootedFromRegion: "; Region->dump(); llvm::errs() << ", VS: "; Updated.dump(); llvm::errs() << "\n";
     if (VR && isa<ParmVarDecl>(VR->getDecl())) {
+      llvm::errs() << "- ParamVarDecl!!!!!!!!\n";
       // This works around us not being able to track symbols for struct/union
       // parameters very well.
       const auto *FD =
@@ -1298,22 +1315,26 @@ void GCChecker::checkDerivingExpr(const Expr *Result, const Expr *Parent,
     } else {
       VR = Helpers::walk_back_to_global_VR(Region);
       if (VR) {
-        if (VR && rootRegionIfGlobal(VR, State, C)) {
+        llvm::errs() << "- Walk back to "; VR->dump(); llvm::errs() << "\n";
+        if (VR && rootRegionIfGlobal(VR, State, C, &Updated)) {
           inheritedState = true;
         }
       }
     }
     if (inheritedState && ResultTracked) {
+      llvm::errs() << "- inheritedState: Sym: "; NewSym->dump(); llvm::errs() << ", VS: "; Updated.dump(); llvm::errs() << "\n";
       C.addTransition(State->set<GCValueMap>(NewSym, Updated));
       return;
     }
   }
   if (NewValS && NewValS->isRooted()) {
+    llvm::errs() << "- NewValS is rooted: "; NewValS->dump(); llvm::errs() << "\n";
     return;
   }
   if (!OldValS) {
     // This way we'll get better diagnostics
     if (isGCTracked(Result)) {
+      llvm::errs() << "- We don't have OldValS, and the result is GC tracked. Set untracked: "; ValueState::getUntracked().dump(); llvm::errs() << "\n";
       C.addTransition(
           State->set<GCValueMap>(NewSym, ValueState::getUntracked()));
     }
@@ -1321,6 +1342,7 @@ void GCChecker::checkDerivingExpr(const Expr *Result, const Expr *Parent,
   }
   validateValue(OldValS, C, OldSym, "Creating derivative of value that may have been");
   if (!OldValS->isPotentiallyFreed() && ResultTracked) {
+    llvm::errs() << "- Set as OldValS: Sym: "; NewSym->dump(); llvm::errs() << ", VS: "; OldValS->dump(); llvm::errs() << "\n";
     C.addTransition(State->set<GCValueMap>(NewSym, *OldValS));
     return;
   }
@@ -1334,10 +1356,18 @@ void GCChecker::checkPostStmt(const ArraySubscriptExpr *ASE,
   // by that array.
   const MemRegion *Region = C.getSVal(ASE->getLHS()).getAsRegion();
   ProgramStateRef State = C.getState();
+  if (Region) {
+    llvm::errs() << "- Region: "; Region->dump(); llvm::errs() << "\n";
+  } else {
+    llvm::errs() << "- Region: null\n";
+  }
+  llvm::errs() << "- isGCTracked: " << isGCTracked(ASE) << "\n";
   if (Region && Region->getAs<ElementRegion>() && isGCTracked(ASE)) {
     auto SuperRegion = Region->getAs<ElementRegion>()->getSuperRegion();
     const RootState *RS = State->get<GCRootMap>(SuperRegion);
     const PinState *PS = State->get<GCPinMap>(SuperRegion);
+    llvm::errs() << "- RootState: "; if (RS) { RS->dump(); } else { llvm::errs() << "null"; } llvm::errs() << "\n";
+    llvm::errs() << "- PinState: "; if (PS) { PS->dump(); } else { llvm::errs() << "null"; } llvm::errs() << "\n";
     if (RS) {
       ValueState ValS = getRootedFromRegion(Region, PS, State->get<GCDepth>());
       SymbolRef NewSym = getSymbolForResult(ASE, &ValS, State, C);
@@ -1868,11 +1898,14 @@ bool GCChecker::rootRegionIfGlobal(const MemRegion *R, ProgramStateRef &State,
   if (declHasAnnotation(VD, "julia_globally_rooted") ||
       isGloballyRootedType(VD->getType())) {
     State = State->set<GCRootMap>(R, RootState::getRoot(-1));
+    llvm::errs() << "- rootRegionIfGlobal: root global "; R->dump(); llvm::errs() << "\n";
     if (isGloballyTransitivelyPinnedType(VD->getType())) {
       State = State->set<GCPinMap>(R, PinState::getTransitivePin(-1));
+      llvm::errs() << "- rootRegionIfGlobal: transitively pin global "; R->dump(); llvm::errs() << "\n";
       pinState = ValueState::TransitivelyPinned;
     } else {
       State = State->set<GCPinMap>(R, PinState::getPin(-1));
+      llvm::errs() << "- rootRegionIfGlobal: pin global "; R->dump(); llvm::errs() << "\n";
       pinState = ValueState::Pinned;
     }
     isGlobalRoot = true;
@@ -1881,12 +1914,16 @@ bool GCChecker::rootRegionIfGlobal(const MemRegion *R, ProgramStateRef &State,
   SymbolRef Sym = TheVal.getAsSymbol();
   ValueState TheValS(isGlobalRoot ? ValueState::getRooted(R, pinState, -1)
                                   : ValueState::getAllocated());
-  if (ValS)
+  if (ValS) {
     *ValS = TheValS;
+    llvm::errs() << "- rootRegionIfGlobal: set ValS"; TheValS.dump(); llvm::errs() << "\n";
+  }
   if (Sym) {
     const ValueState *GVState = C.getState()->get<GCValueMap>(Sym);
-    if (!GVState)
+    if (!GVState) {
       State = State->set<GCValueMap>(Sym, TheValS);
+      llvm::errs() << "- rootRegionIfGlobal: "; Sym->dump(); llvm::errs() << ", VS: "; TheValS.dump(); llvm::errs() << "\n";
+    }
   }
   return true;
 }
