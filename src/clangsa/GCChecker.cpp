@@ -2,8 +2,7 @@
 
 // Assumptions for pinning:
 // * args need to be pinned
-// * JL_ROOTING_ARGUMENT and JL_ROOTED_ARGUMENT will propogate pinning state as well.
-// * globally rooted means pinned as well (not T pin).
+// * JL_ROOTING_ARGUMENT and JL_ROOTED_ARGUMENT will propagate pinning state as well.
 
 #include "clang/Frontend/FrontendActions.h"
 #include "clang/StaticAnalyzer/Checkers/SValExplainer.h"
@@ -153,6 +152,19 @@ public:
         return TransitivelyPinned;
       else
         return Pinned;
+    }
+    // Inherit state from a parent object to its child object
+    static ValueState inheritState(ValueState parent) {
+      if (parent.isTransitivelyPinned()) {
+        // If parent is tpinned, the child is tpinned.
+        return parent;
+      } else if (parent.isPinned()) {
+        // If parent is pinned, the child is not pinned.
+        return getNotPinned(parent);
+      } else {
+        // For other cases, the children have the same state as the parent.
+        return parent;
+      }
     }
 
     static ValueState getAllocated() {
@@ -1174,11 +1186,18 @@ bool GCChecker::processAllocationOfResult(const CallEvent &Call,
     const FunctionDecl *FD = Decl ? Decl->getAsFunction() : nullptr;
     if (FD) {
       if (declHasAnnotation(FD, "julia_globally_rooted")) {
-        // Globally rooted = at least pinned
-        NewVState = ValueState::getRooted(nullptr, ValueState::Pinned, -1);
+        if (declHasAnnotation(FD, "julia_globally_pinned")) {
+          NewVState = ValueState::getRooted(nullptr, ValueState::Pinned, -1);
+        } else if (declHasAnnotation(FD, "julia_globally_tpinned")) {
+          NewVState = ValueState::getRooted(nullptr, ValueState::TransitivelyPinned, -1);
+        } else {
+          // Not pinned
+          NewVState = ValueState::getRooted(nullptr, -1);
+        }
       } else {
         // Special case for jl_box_ functions which have value-dependent
         // global roots.
+        // See jl_as_global_root().
         StringRef FDName =
             FD->getDeclName().isIdentifier() ? FD->getName() : "";
         if (FDName.startswith("jl_box_") || FDName.startswith("ijl_box_")) {
@@ -1197,6 +1216,7 @@ bool GCChecker::processAllocationOfResult(const CallEvent &Call,
               }
             }
             if (GloballyRooted) {
+              // These are perm allocated, thus pinned.
               NewVState = ValueState::getRooted(nullptr, ValueState::Pinned, -1);
             }
           }
@@ -1939,14 +1959,17 @@ bool GCChecker::rootRegionIfGlobal(const MemRegion *R, ProgramStateRef &State,
       isGloballyRootedType(VD->getType())) {
     State = State->set<GCRootMap>(R, RootState::getRoot(-1));
     logWithDump("- rootRegionIfGlobal: root global", R);
-    if (isGloballyTransitivelyPinnedType(VD->getType())) {
+    if (isGloballyTransitivelyPinnedType(VD->getType()) || declHasAnnotation(VD, "julia_globally_tpinned")) {
       State = State->set<GCPinMap>(R, PinState::getTransitivePin(-1));
       logWithDump("- rootRegionIfGlobal: transitively pin global", R);
       pinState = ValueState::TransitivelyPinned;
-    } else {
+    } else if (declHasAnnotation(VD, "julia_globally_pinned")) {
       State = State->set<GCPinMap>(R, PinState::getPin(-1));
       logWithDump("- rootRegionIfGlobal: pin global", R);
       pinState = ValueState::Pinned;
+    } else {
+      logWithDump("- rootRegionIfGlobal: not pin", R);
+      pinState = ValueState::NotPinned;
     }
     isGlobalRoot = true;
   }
@@ -1955,8 +1978,8 @@ bool GCChecker::rootRegionIfGlobal(const MemRegion *R, ProgramStateRef &State,
   ValueState TheValS(isGlobalRoot ? ValueState::getRooted(R, pinState, -1)
                                   : ValueState::getAllocated());
   if (ValS) {
-    *ValS = TheValS;
-    logWithDump("- rootRegionIfGlobal: set ValS", TheValS);
+    *ValS = ValueState::inheritState(TheValS);
+    logWithDump("- rootRegionIfGlobal: inherit state", TheValS);
   }
   if (Sym) {
     const ValueState *GVState = C.getState()->get<GCValueMap>(Sym);

@@ -167,7 +167,7 @@ int unrooted() {
                            // expected-note@-1{{Trying to access value which may have been GCed}}
 }
 
-extern jl_value_t *global_value JL_GLOBALLY_ROOTED;
+extern jl_value_t *global_value JL_GLOBALLY_ROOTED JL_GLOBALLY_PINNED;
 void globally_rooted() {
   jl_value_t *val = global_value;
   jl_gc_safepoint();
@@ -239,7 +239,7 @@ void pushargs_as_args()
   JL_GC_POP();
 }
 
-static jl_typemap_entry_t *this_call_cache[10] JL_GLOBALLY_ROOTED;
+static jl_typemap_entry_t *this_call_cache[10] JL_GLOBALLY_ROOTED JL_GLOBALLY_TPINNED;
 void global_array2() {
   jl_value_t *val = NULL;
   JL_GC_PUSH1(&val);
@@ -296,12 +296,12 @@ void tparam0(jl_value_t *atype) {
    look_at_value(jl_tparam0(atype));
 }
 
-extern jl_value_t *global_atype JL_GLOBALLY_ROOTED;
+extern jl_value_t *global_atype JL_GLOBALLY_ROOTED JL_GLOBALLY_TPINNED;
 void tparam0_global() {
    look_at_value(jl_tparam0(global_atype));
 }
 
-static jl_value_t *some_global JL_GLOBALLY_ROOTED;
+static jl_value_t *some_global JL_GLOBALLY_ROOTED JL_GLOBALLY_PINNED;
 void global_copy() {
     jl_value_t *local = NULL;
     jl_gc_safepoint();
