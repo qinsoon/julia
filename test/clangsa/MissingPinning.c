@@ -6,12 +6,18 @@
 #include "julia_internal.h"
 
 extern void look_at_value(jl_value_t *v);
+extern void process_unrooted(jl_value_t *maybe_unrooted JL_MAYBE_UNROOTED JL_MAYBE_UNPINNED);
 
 void unpinned_argument() {
     jl_svec_t *val = jl_svec1(NULL);  // expected-note{{Started tracking value here}}
     JL_GC_PROMISE_ROOTED(val);        // expected-note{{Value was rooted here}}
     look_at_value((jl_value_t*) val); // expected-warning{{Passing non-pinned value as argument to function that may GC}}
                                       // expected-note@-1{{Passing non-pinned value as argument to function that may GC}}                                      
+}
+
+int allow_unpinned() {
+  jl_svec_t *val = jl_svec1(NULL);
+  process_unrooted((jl_value_t*)val);
 }
 
 void pinned_argument() {
