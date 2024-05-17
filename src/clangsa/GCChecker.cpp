@@ -833,6 +833,7 @@ void GCChecker::checkBeginFunction(CheckerContext &C) const {
   const auto *FD = dyn_cast<FunctionDecl>(LCtx->getDecl());
   if (!FD)
     return;
+  logWithDump("checkBeginFunction", FD);
   ProgramStateRef State = C.getState();
   bool Change = false;
   if (C.inTopFrame()) {
@@ -880,6 +881,7 @@ void GCChecker::checkBeginFunction(CheckerContext &C) const {
 
 void GCChecker::checkEndFunction(const clang::ReturnStmt *RS,
                                  CheckerContext &C) const {
+  log("checkEndFunction");
   ProgramStateRef State = C.getState();
 
   if (RS && gcEnabledHere(C) && RS->getRetValue() && isGCTracked(RS->getRetValue())) {
@@ -1153,7 +1155,7 @@ bool GCChecker::processArgumentRooting(const CallEvent &Call, CheckerContext &C,
   const ValueState *CurrentVState = State->get<GCValueMap>(RootedSymbol);
   ValueState NewVState = *OldVState;
   // If the old state is pinned, the new state is not pinned.
-  if (OldVState->isPinned() && ((CurrentVState && CurrentVState->isPinnedByAnyway()) || !CurrentVState)) {
+  if (OldVState->isPinned() && ((CurrentVState && !CurrentVState->isPinnedByAnyway()) || !CurrentVState)) {
     NewVState = ValueState::getNotPinned(*OldVState);
   }
   logWithDump("- Rooted set to", NewVState);
@@ -1245,8 +1247,11 @@ bool GCChecker::processAllocationOfResult(const CallEvent &Call,
 void GCChecker::checkPostCall(const CallEvent &Call, CheckerContext &C) const {
   logWithDump("checkPostCall", Call);
   ProgramStateRef State = C.getState();
+  log("- processArgmentRooting");
   bool didChange = processArgumentRooting(Call, C, State);
+  log("- processPotentialsafepoint");
   didChange |= processPotentialSafepoint(Call, C, State);
+  log("- processAllocationOfResult");
   didChange |= processAllocationOfResult(Call, C, State);
   if (didChange)
     C.addTransition(State);
@@ -1255,6 +1260,7 @@ void GCChecker::checkPostCall(const CallEvent &Call, CheckerContext &C) const {
 // Implicitly root values that were casted to globally rooted values
 void GCChecker::checkPostStmt(const CStyleCastExpr *CE,
                               CheckerContext &C) const {
+  logWithDump("checkpostStmt(CStyleCastExpr)", CE);
   if (!isGloballyRootedType(CE->getTypeAsWritten()))
     return;
   SymbolRef Sym = C.getSVal(CE).getAsSymbol();
@@ -1481,6 +1487,7 @@ void GCChecker::checkPostStmt(const MemberExpr *ME, CheckerContext &C) const {
 
 void GCChecker::checkPostStmt(const UnaryOperator *UO,
                               CheckerContext &C) const {
+  logWithDump("checkPostStmt(UnaryOperator)", UO);
   if (UO->getOpcode() == UO_Deref) {
     checkDerivingExpr(UO, UO->getSubExpr(), true, C);
   }
@@ -1994,6 +2001,7 @@ bool GCChecker::rootRegionIfGlobal(const MemRegion *R, ProgramStateRef &State,
 
 void GCChecker::checkLocation(SVal SLoc, bool IsLoad, const Stmt *S,
                               CheckerContext &C) const {
+  logWithDump("checkLocation", SLoc);
   ProgramStateRef State = C.getState();
   bool DidChange = false;
   const RootState *RS = nullptr;
