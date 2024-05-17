@@ -1871,12 +1871,12 @@ JL_DLLEXPORT void JL_NORETURN jl_exceptionf(jl_datatype_t *ty,
 JL_DLLEXPORT void JL_NORETURN jl_too_few_args(const char *fname, int min);
 JL_DLLEXPORT void JL_NORETURN jl_too_many_args(const char *fname, int max);
 JL_DLLEXPORT void JL_NORETURN jl_type_error(const char *fname,
-                                            jl_value_t *expected JL_MAYBE_UNROOTED,
-                                            jl_value_t *got JL_MAYBE_UNROOTED);
+                                            jl_value_t *expected JL_MAYBE_UNROOTED JL_MAYBE_UNPINNED,
+                                            jl_value_t *got JL_MAYBE_UNROOTED JL_MAYBE_UNPINNED);
 JL_DLLEXPORT void JL_NORETURN jl_type_error_rt(const char *fname,
                                                const char *context,
-                                               jl_value_t *ty JL_MAYBE_UNROOTED,
-                                               jl_value_t *got JL_MAYBE_UNROOTED);
+                                               jl_value_t *ty JL_MAYBE_UNROOTED JL_MAYBE_UNPINNED,
+                                               jl_value_t *got JL_MAYBE_UNROOTED JL_MAYBE_UNPINNED);
 JL_DLLEXPORT void JL_NORETURN jl_undefined_var_error(jl_sym_t *var);
 JL_DLLEXPORT void JL_NORETURN jl_has_no_field_error(jl_sym_t *type_name, jl_sym_t *var);
 JL_DLLEXPORT void JL_NORETURN jl_atomic_error(char *str);
