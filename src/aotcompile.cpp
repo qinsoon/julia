@@ -240,8 +240,13 @@ static void jl_ci_cache_lookup(const jl_cgparams_t &cgparams, jl_method_instance
         jl_method_t *def = codeinst->def->def.method;
         if ((jl_value_t*)*src_out == jl_nothing)
             *src_out = NULL;
-        if (*src_out && jl_is_method(def))
+        if (*src_out && jl_is_method(def)) {
+            PTR_PIN(def);
+            PTR_PIN(codeinst);
             *src_out = jl_uncompress_ir(def, codeinst, (jl_array_t*)*src_out);
+            PTR_UNPIN(codeinst);
+            PTR_UNPIN(def);
+        }
     }
     if (*src_out == NULL || !jl_is_code_info(*src_out)) {
         if (cgparams.lookup != jl_rettype_inferred) {
@@ -341,7 +346,9 @@ void *jl_create_native_impl(jl_array_t *methods, LLVMOrcThreadSafeModuleRef llvm
                             params.tsctx, params.imaging,
                             clone.getModuleUnlocked()->getDataLayout(),
                             Triple(clone.getModuleUnlocked()->getTargetTriple()));
+                    PTR_PIN(codeinst->rettype);
                     jl_llvm_functions_t decls = jl_emit_code(result_m, mi, src, codeinst->rettype, params);
+                    PTR_UNPIN(codeinst->rettype);
                     if (result_m)
                         emitted[codeinst] = {std::move(result_m), std::move(decls)};
                 }
