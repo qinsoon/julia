@@ -3,6 +3,10 @@
 // Assumptions for pinning:
 // * args need to be pinned
 // * JL_ROOTING_ARGUMENT and JL_ROOTED_ARGUMENT will propagate pinning state as well.
+// * The checker may not consider alias for derived pointers in some cases.
+//   * if f(x) returns a derived pointer from x, a = f(x); b = f(x); PTR_PIN(a); The checker will NOT find b as pinned.
+//   * a = x->y; b = x->y; PTR_PIN(a); The checker will find b as pinned.
+//   * Need to see if this affects correctness.
 
 #include "clang/Frontend/FrontendActions.h"
 #include "clang/StaticAnalyzer/Checkers/SValExplainer.h"
@@ -96,6 +100,7 @@ public:
       llvm::dbgs() << ((P == TransitivelyPinned) ? "TransitivelyPinned"
                      : (P == Pinned) ? "Pinned"
                      : (P == NotPinned) ? "NotPinned"
+                     : (P == Moved) ? "Moved"
                      : "Error");
       llvm::dbgs() << ",";
       if (S == Rooted)
@@ -325,6 +330,7 @@ private:
   SymbolRef getSymbolForResult(const Expr *Result, const ValueState *OldValS,
                                ProgramStateRef &State, CheckerContext &C) const;
   void validateValue(const GCChecker::ValueState* VS, CheckerContext &C, SymbolRef Sym, const char *message) const;
+  void validateValueRootnessOnly(const GCChecker::ValueState* VS, CheckerContext &C, SymbolRef Sym, const char *message) const;
   void validateValue(const GCChecker::ValueState* VS, CheckerContext &C, SymbolRef Sym, const char *message, SourceRange range) const;
   int validateValueInner(const GCChecker::ValueState* VS) const;
   GCChecker::ValueState getRootedFromRegion(const MemRegion *Region, const PinState *PS, int Depth) const;
@@ -401,6 +407,7 @@ SymbolRef GCChecker::walkToRoot(callback f, const ProgramStateRef &State,
                                 const MemRegion *Region) {
   if (!Region)
     return nullptr;
+  logWithDump("- walkToRoot, Region", Region);
   while (true) {
     const SymbolicRegion *SR = Region->getSymbolicBase();
     if (!SR) {
@@ -408,6 +415,8 @@ SymbolRef GCChecker::walkToRoot(callback f, const ProgramStateRef &State,
     }
     SymbolRef Sym = SR->getSymbol();
     const ValueState *OldVState = State->get<GCValueMap>(Sym);
+    logWithDump("- walkToRoot, Sym", Sym);
+    logWithDump("- walkToRoot, OldVState", OldVState);
     if (f(Sym, OldVState)) {
       if (const SymbolRegionValue *SRV = dyn_cast<SymbolRegionValue>(Sym)) {
         Region = SRV->getRegion();
@@ -465,6 +474,15 @@ void GCChecker::validateValue(const ValueState* VS, CheckerContext &C, SymbolRef
     GCChecker::report_value_error(C, Sym, (std::string(message) + " GCed").c_str(), range);
   } else if (v == MOVED) {
     GCChecker::report_value_error(C, Sym, (std::string(message) + " moved").c_str(), range);
+  }
+}
+
+void GCChecker::validateValueRootnessOnly(const ValueState* VS, CheckerContext &C, SymbolRef Sym, const char *message) const {
+  int v = validateValueInner(VS);
+  if (v == FREED) {
+    GCChecker::report_value_error(C, Sym, (std::string(message) + " GCed").c_str());
+  } else if (v == MOVED) {
+    // We don't care if it is moved
   }
 }
 
@@ -1106,7 +1124,11 @@ bool GCChecker::processPotentialSafepoint(const CallEvent &Call,
     if (RetSym == I.getKey())
       continue;
     if (I.getData().isNotPinned()) {
-      State = State->set<GCValueMap>(I.getKey(), ValueState::getMoved(I.getData()));
+      logWithDump("- move unpinned values, Sym", I.getKey());
+      logWithDump("- move unpinned values, VS", I.getData());
+      auto NewVS = ValueState::getMoved(I.getData());
+      State = State->set<GCValueMap>(I.getKey(), NewVS);
+      logWithDump("- move unpinned values, NewVS", NewVS);
       DidChange = true;
     }
   }
@@ -1178,6 +1200,8 @@ bool GCChecker::processAllocationOfResult(const CallEvent &Call,
         Call.getOriginExpr(), C.getLocationContext(), QT, C.blockCount());
     State = State->BindExpr(Call.getOriginExpr(), C.getLocationContext(), S);
     Sym = S.getAsSymbol();
+    logWithDump("- conjureSymbolVal, S", S);
+    logWithDump("- conjureSymbolVal, Sym", Sym);
   }
   if (isGloballyRootedType(QT))
     State = State->set<GCValueMap>(Sym, ValueState::getRooted(nullptr, ValueState::pinState(isGloballyTransitivelyPinnedType(QT)), -1));
@@ -1231,8 +1255,11 @@ bool GCChecker::processAllocationOfResult(const CallEvent &Call,
               const MemRegion *Region = Test.getAsRegion();
               const ValueState *OldVState =
                   getValStateForRegion(C.getASTContext(), State, Region);
-              if (OldVState)
-                NewVState = *OldVState;
+              if (OldVState) {
+                NewVState = ValueState::inheritState(*OldVState);
+                logWithDump("- jl_propagates_root, OldVState", *OldVState);
+                logWithDump("- jl_propagates_root, NewVState", NewVState);
+              }
               break;
             }
           }
@@ -1360,6 +1387,7 @@ void GCChecker::checkDerivingExpr(const Expr *Result, const Expr *Parent,
   SymbolRef OldSym = ParentVal.getAsSymbol(true);
   const MemRegion *Region = C.getSVal(Parent).getAsRegion();
   const ValueState *OldValS = OldSym ? State->get<GCValueMap>(OldSym) : nullptr;
+  logWithDump("- Region", Region);
   logWithDump("- OldSym", OldSym);
   logWithDump("- OldValS", OldValS);
   SymbolRef NewSym = getSymbolForResult(Result, OldValS, State, C);
@@ -1369,6 +1397,7 @@ void GCChecker::checkDerivingExpr(const Expr *Result, const Expr *Parent,
   logWithDump("- NewSym", NewSym);
   // NewSym might already have a better root
   const ValueState *NewValS = State->get<GCValueMap>(NewSym);
+  logWithDump("- NewValS", NewValS);
   if (Region) {
     const VarRegion *VR = Region->getAs<VarRegion>();
     bool inheritedState = false;
@@ -1418,8 +1447,9 @@ void GCChecker::checkDerivingExpr(const Expr *Result, const Expr *Parent,
   validateValue(OldValS, C, OldSym, "Creating derivative of value that may have been");
   if (!OldValS->isPotentiallyFreed() && ResultTracked) {
     logWithDump("- Set as OldValS, Sym", NewSym);
-    logWithDump("- Set as OldValS, VS", OldValS);
-    C.addTransition(State->set<GCValueMap>(NewSym, *OldValS));
+    auto InheritVS = ValueState::inheritState(*OldValS);
+    logWithDump("- Set as OldValS, InheritVS", InheritVS);
+    C.addTransition(State->set<GCValueMap>(NewSym, InheritVS));
     return;
   }
 }
@@ -1739,6 +1769,13 @@ bool GCChecker::evalCall(const CallEvent &Call, CheckerContext &C) const {
       report_error(C, "Can not understand this pin.");
       return true;
     }
+
+    const ValueState *OldVS = C.getState()->get<GCValueMap>(Sym);
+    if (OldVS && OldVS->isMoved()) {
+      report_error(C, "Attempt to PIN a value that is already moved.");
+      return true;
+    }
+
     auto MRV = Arg.getAs<loc::MemRegionVal>();
     if (!MRV) {
       report_error(C, "PTR_PIN with something other than a local variable");
@@ -1747,7 +1784,6 @@ bool GCChecker::evalCall(const CallEvent &Call, CheckerContext &C) const {
     const MemRegion *Region = MRV->getRegion();
     auto State = C.getState()->set<GCPinMap>(Region, PinState::getPin(CurrentDepth));
     logWithDump("- Pin region", Region);
-    const ValueState *OldVS = State->get<GCValueMap>(Sym);
     State = State->set<GCValueMap>(Sym, ValueState::getPinned(*OldVS));
     logWithDump("- Pin value", Sym);
     C.addTransition(State);
@@ -1899,8 +1935,11 @@ void GCChecker::checkBind(SVal LVal, SVal RVal, const clang::Stmt *S,
     const ValueState *ValSP = nullptr;
     ValueState ValS;
     if (rootRegionIfGlobal(R->getBaseRegion(), State, C, &ValS)) {
+      logWithDump("- rootRegionIfGlobal, base", R->getBaseRegion());
       ValSP = &ValS;
+      logWithDump("- rootRegionIfGlobal ValSP", ValSP);
     } else {
+      logWithDump("- getValStateForRegion", R);
       ValSP = getValStateForRegion(C.getASTContext(), State, R);
     }
     if (ValSP && ValSP->isRooted()) {
@@ -1910,8 +1949,9 @@ void GCChecker::checkBind(SVal LVal, SVal RVal, const clang::Stmt *S,
           RValState->RootDepth < ValSP->RootDepth) {
         logWithDump("- No need to set ValState, current ValState", RValState);
       } else {
-        logWithDump("- Set ValState, current ValState", ValSP);
-        C.addTransition(State->set<GCValueMap>(Sym, *ValSP));
+        auto InheritVS = ValueState::inheritState(*ValSP);
+        logWithDump("- Set ValState, InheritVS", InheritVS);
+        C.addTransition(State->set<GCValueMap>(Sym, InheritVS));
       }
     }
   } else {
@@ -2008,42 +2048,55 @@ void GCChecker::checkLocation(SVal SLoc, bool IsLoad, const Stmt *S,
   // Loading from a root produces a rooted symbol. TODO: Can we do something
   // better than this.
   if (IsLoad && (RS = State->get<GCRootMap>(SLoc.getAsRegion()))) {
+    logWithDump("- IsLoad, RS", RS);
     SymbolRef LoadedSym =
         State->getSVal(SLoc.getAs<Loc>().getValue()).getAsSymbol();
     if (LoadedSym) {
       const ValueState *ValS = State->get<GCValueMap>(LoadedSym);
+      logWithDump("- IsLoad, LoadedSym", LoadedSym);
+      logWithDump("- IsLoad, ValS", ValS);
       if (!ValS || !ValS->isRooted() || ValS->RootDepth > RS->RootedAtDepth) {
+        auto NewVS = getRootedFromRegion(SLoc.getAsRegion(), State->get<GCPinMap>(SLoc.getAsRegion()), RS->RootedAtDepth);
+        logWithDump("- IsLoad, NewVS", NewVS);
         DidChange = true;
-        State = State->set<GCValueMap>(
-            LoadedSym,
-            getRootedFromRegion(SLoc.getAsRegion(), State->get<GCPinMap>(SLoc.getAsRegion()), RS->RootedAtDepth));
+        State = State->set<GCValueMap>(LoadedSym, NewVS);
       }
     }
   }
+  logWithDump("- getAsRegion()", SLoc.getAsRegion());
   // If it's just the symbol by itself, let it be. We allow dead pointer to be
   // passed around, so long as they're not accessed. However, we do want to
   // start tracking any globals that may have been accessed.
   if (rootRegionIfGlobal(SLoc.getAsRegion(), State, C)) {
     C.addTransition(State);
+    log("- rootRegionIfGlobal");
     return;
   }
   SymbolRef SymByItself = SLoc.getAsSymbol(false);
+  logWithDump("- SymByItself", SymByItself);
   if (SymByItself) {
     DidChange &&C.addTransition(State);
     return;
   }
   // This will walk backwards until it finds the base symbol
   SymbolRef Sym = SLoc.getAsSymbol(true);
+  logWithDump("- Sym", Sym);
   if (!Sym) {
     DidChange &&C.addTransition(State);
     return;
   }
   const ValueState *VState = State->get<GCValueMap>(Sym);
+  logWithDump("- VState", VState);
   if (!VState) {
     DidChange &&C.addTransition(State);
     return;
   }
-  validateValue(VState, C, Sym, "Trying to access value which may have been");
+  // If this is the sym, we verify both rootness and pinning. Otherwise, it may be the parent sym and we only care about the rootness.
+  if (SymByItself == Sym) {
+    validateValue(VState, C, Sym, "Trying to access value which may have been");
+  } else {
+    validateValueRootnessOnly(VState, C, Sym, "Trying to access value which may have been");
+  }
   DidChange &&C.addTransition(State);
 }
 
