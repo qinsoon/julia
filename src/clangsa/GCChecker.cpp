@@ -7,6 +7,9 @@
 //   * if f(x) returns a derived pointer from x, a = f(x); b = f(x); PTR_PIN(a); The checker will NOT find b as pinned.
 //   * a = x->y; b = x->y; PTR_PIN(a); The checker will find b as pinned.
 //   * Need to see if this affects correctness.
+// * The checker may report some vals as moved even if there is a new load for the val after safepoint.
+//   * f(x->a); jl_safepoint(); f(x->a); x->a is loaded after a safepoint, but the checker may report errors. This seems fine, as the compiler may hoist the load.
+//   * a = x->a; f(a); jl_safepoint(); f(a); a may be moved in a safepoint, and the checker will report errors.
 
 #include "clang/Frontend/FrontendActions.h"
 #include "clang/StaticAnalyzer/Checkers/SValExplainer.h"
@@ -46,7 +49,7 @@ static const Stmt *getStmtForDiagnostics(const ExplodedNode *N)
 }
 
 // Turn on/off the log here
-#define DEBUG_LOG 0
+#define DEBUG_LOG 1
 
 class GCChecker
     : public Checker<
@@ -235,7 +238,6 @@ public:
                      : "Error");
       llvm::dbgs() << ",Depth=";
       llvm::dbgs() << RootedAtDepth;
-      llvm::dbgs() << "\n";
     }
   };
 
@@ -1928,6 +1930,7 @@ void GCChecker::checkBind(SVal LVal, SVal RVal, const clang::Stmt *S,
     log("- No Sym");
     return;
   }
+  logWithDump("- Sym", Sym);
   const auto *RootState = State->get<GCRootMap>(R);
   logWithDump("- R", R);
   logWithDump("- RootState for R", RootState);
@@ -1941,6 +1944,7 @@ void GCChecker::checkBind(SVal LVal, SVal RVal, const clang::Stmt *S,
     } else {
       logWithDump("- getValStateForRegion", R);
       ValSP = getValStateForRegion(C.getASTContext(), State, R);
+      logWithDump("- getValStateForRegion", ValSP);
     }
     if (ValSP && ValSP->isRooted()) {
       logWithDump("- Found base region that is rooted", ValSP);

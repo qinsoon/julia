@@ -123,3 +123,24 @@ void mtable(jl_value_t *f) {
     look_at_value(mtable);
     PTR_UNPIN(mtable);
 }
+
+void pass_arg_to_non_safepoint(jl_tupletype_t *sigt) {
+    jl_value_t *ati = jl_tparam(sigt, 0);
+}
+
+// Though the code loads the pointer after the safepoint, we don't know if the compiler would hoist the load before the safepoint.
+// So it is fine that the checker reports this as an error.
+void load_new_pointer_after_safepoint(jl_tupletype_t *t) {
+    jl_value_t *a0 = jl_svecref(((jl_datatype_t*)(t))->parameters, 0);//expected-note{{Started tracking value here}}
+    jl_safepoint();
+    jl_value_t *a1 = jl_svecref(((jl_datatype_t*)(t))->parameters, 1);//expected-warning{{Argument value may have been moved}}
+                                                                      //expected-note@-1{{Argument value may have been moved}}
+}
+
+void hoist_load_before_safepoint(jl_tupletype_t *t) {
+    jl_svec_t* params = ((jl_datatype_t*)(t))->parameters; //expected-note{{Started tracking value here}}
+    jl_value_t *a0 = jl_svecref(params, 0);
+    jl_safepoint();
+    jl_value_t *a1 = jl_svecref(params, 1); //expected-warning{{Argument value may have been moved}}
+                                            //expected-note@-1{{Argument value may have been moved}}
+}
