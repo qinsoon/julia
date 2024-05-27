@@ -144,3 +144,38 @@ void hoist_load_before_safepoint(jl_tupletype_t *t) {
     jl_value_t *a1 = jl_svecref(params, 1); //expected-warning{{Argument value may have been moved}}
                                             //expected-note@-1{{Argument value may have been moved}}
 }
+
+// We tpin a local var, and later rebind a value to the local val. The value should be considered as pinned.
+void rebind_tpin(jl_method_instance_t *mi, size_t world) {
+    jl_code_info_t *src = NULL;
+    JL_GC_PUSH1(&src);
+    jl_value_t *ci = jl_rettype_inferred(mi, world, world);
+    jl_code_instance_t *codeinst = (ci == jl_nothing ? NULL : (jl_code_instance_t*)ci);
+    if (codeinst) {
+        PTR_PIN(mi->def.method);
+        PTR_PIN(codeinst);
+        src = (jl_code_info_t*)jl_atomic_load_relaxed(&codeinst->inferred);
+        src = jl_uncompress_ir(mi->def.method, codeinst, (jl_array_t*)src);
+        PTR_UNPIN(codeinst);
+        PTR_UNPIN(mi->def.method);
+    }
+    JL_GC_POP();
+}
+
+void rebind_tpin_simple1() {
+    jl_value_t *t = NULL;
+    JL_GC_PUSH1(&t);
+    jl_svec_t *v = jl_svec1(NULL);
+    t = (jl_value_t*)v;
+    look_at_value(t);
+    JL_GC_POP();
+}
+
+void rebind_tpin_simple2() {
+    jl_value_t *t = NULL;
+    JL_GC_PUSH1(&t);
+    jl_svec_t *v = jl_svec1(NULL);
+    t = (jl_value_t*)v;
+    look_at_value(v);
+    JL_GC_POP();
+}
