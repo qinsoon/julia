@@ -49,7 +49,7 @@ static const Stmt *getStmtForDiagnostics(const ExplodedNode *N)
 }
 
 // Turn on/off the log here
-#define DEBUG_LOG 1
+#define DEBUG_LOG 0
 
 class GCChecker
     : public Checker<
@@ -1980,7 +1980,7 @@ void GCChecker::checkBind(SVal LVal, SVal RVal, const clang::Stmt *S,
     } else {
       logWithDump("- Found ValState for Sym", RValState);
       validateValue(RValState, C, Sym, "Trying to root value which may have been");
-      if (!RValState->isRooted() ||
+      if (!RValState->isRooted() || !RValState->isPinnedByAnyway() ||
           RValState->RootDepth > RootState->RootedAtDepth) {
         auto NewVS = getRootedFromRegion(R, State->get<GCPinMap>(R), RootState->RootedAtDepth);
         logWithDump("- getRootedFromRegion", NewVS);
@@ -2059,7 +2059,7 @@ void GCChecker::checkLocation(SVal SLoc, bool IsLoad, const Stmt *S,
       const ValueState *ValS = State->get<GCValueMap>(LoadedSym);
       logWithDump("- IsLoad, LoadedSym", LoadedSym);
       logWithDump("- IsLoad, ValS", ValS);
-      if (!ValS || !ValS->isRooted() || ValS->RootDepth > RS->RootedAtDepth) {
+      if (!ValS || !ValS->isRooted() || !ValS->isPinnedByAnyway() || ValS->RootDepth > RS->RootedAtDepth) {
         auto NewVS = getRootedFromRegion(SLoc.getAsRegion(), State->get<GCPinMap>(SLoc.getAsRegion()), RS->RootedAtDepth);
         logWithDump("- IsLoad, NewVS", NewVS);
         DidChange = true;
