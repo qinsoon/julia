@@ -737,6 +737,8 @@ PDP GCChecker::GCValueBugVisitor::VisitNode(const ExplodedNode *N,
     return MakePDP(Pos, "Root was released here.");
   } else if (NewValueState->RootDepth != OldValueState->RootDepth) {
     return MakePDP(Pos, "Rooting Depth changed here.");
+  } else if (NewValueState->isMoved() && !OldValueState->isMoved()) {
+    return MakePDP(Pos, "Value was moved here.");
   }
   return nullptr;
 }
