@@ -201,8 +201,13 @@ public:
         VS.FD = FD;
         return VS;
       }
-      // Assume arguments are pinned
-      return getRooted(nullptr, ValueState::Pinned, -1);
+      bool require_tpin = declHasAnnotation(PVD, "julia_require_tpin");
+      if (require_tpin) {
+        return getRooted(nullptr, ValueState::TransitivelyPinned, -1);
+      } else {
+        // Assume arguments are pinned
+        return getRooted(nullptr, ValueState::Pinned, -1);
+      }
     }
   };
 
@@ -884,7 +889,10 @@ void GCChecker::checkBeginFunction(CheckerContext &C) const {
       auto Param = State->getLValue(P, LCtx);
       const MemRegion *Root = State->getSVal(Param).getAsRegion();
       State = State->set<GCRootMap>(Root, RootState::getRoot(-1));
-      State = State->set<GCPinMap>(Root, PinState::getPin(-1));
+      if (declHasAnnotation(P, "julia_require_tpin"))
+        State = State->set<GCPinMap>(Root, PinState::getTransitivePin(-1));
+      else
+        State = State->set<GCPinMap>(Root, PinState::getTransitivePin(-1));
     } else if (isGCTrackedType(P->getType())) {
       auto Param = State->getLValue(P, LCtx);
       SymbolRef AssignedSym = State->getSVal(Param).getAsSymbol();
@@ -1629,6 +1637,11 @@ void GCChecker::checkPreCall(const CallEvent &Call, CheckerContext &C) const {
       }
       if (!MaybeUnpinned && isCalleeSafepoint) {
         report_value_error(C, Sym, "Passing non-pinned value as argument to function that may GC", range);
+      }
+    }
+    if (FD && idx < FD->getNumParams() && declHasAnnotation(FD->getParamDecl(idx), "julia_require_tpin")) {
+      if (!ValState->isTransitivelyPinned()) {
+        report_value_error(C, Sym, "Passing non-tpinned argument to function that requires a tpin argument.");
       }
     }
   }

@@ -179,3 +179,25 @@ void rebind_tpin_simple2() {
     look_at_value(v);
     JL_GC_POP();
 }
+
+int transitive_closure(jl_value_t *v JL_REQUIRE_TPIN) {
+    if (jl_is_unionall(v)) {
+        jl_unionall_t *ua = (jl_unionall_t*)v;
+        return transitive_closure(ua->body);
+    }
+    return 0;
+}
+
+extern void look_at_tpin_value(jl_value_t *v JL_REQUIRE_TPIN);
+
+int properly_tpin_arg(jl_value_t *v) {
+    JL_GC_PUSH1(&v);
+    look_at_tpin_value(v);
+    JL_GC_POP();
+}
+
+int no_tpin_arg(jl_value_t *v) {
+    look_at_tpin_value(v); // expected-warning{{Passing non-tpinned argument to function that requires a tpin argument}}
+                           // expected-note@-1{{Passing non-tpinned argument to function that requires a tpin argument}}
+                           // expected-note@+1{{Started tracking value here (root was inherited)}}
+}
