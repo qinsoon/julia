@@ -505,7 +505,7 @@ void GCChecker::validateValue(const ValueState* VS, CheckerContext &C, SymbolRef
 int GCChecker::validateValueInner(const ValueState* VS) const {
   if (!VS)
     return VALID;
-  
+
   if (VS->isPotentiallyFreed()) {
     return FREED;
   }
@@ -563,7 +563,7 @@ void GCChecker::logWithDump(const std::string& message, const T &obj) {
 void GCChecker::log(const std::string& message) {
   if (!DEBUG_LOG)
     return;
-  
+
   llvm::errs() << message;
   llvm::errs() << "\n";
 }
@@ -1625,7 +1625,7 @@ void GCChecker::checkPreCall(const CallEvent &Call, CheckerContext &C) const {
             C, Sym,
             "Passing non-rooted value as argument to function that may GC",
             range);
-      }      
+      }
     }
     if (ValState->isNotPinned()) {
       bool MaybeUnpinned = false;
@@ -1753,7 +1753,7 @@ bool GCChecker::evalCall(const CallEvent &Call, CheckerContext &C) const {
       State = State->set<GCPinMap>(Region, PinState::getTransitivePin(CurrentDepth));
     } else {
       logWithDump("- Root and pin", Region);
-      State = State->set<GCPinMap>(Region, PinState::getPin(CurrentDepth)); 
+      State = State->set<GCPinMap>(Region, PinState::getPin(CurrentDepth));
     }
     // The Argument array may also be used as a value, so make it rooted
     // SymbolRef ArgArraySym = ArgArray.getAsSymbol();
@@ -1991,7 +1991,7 @@ void GCChecker::checkBind(SVal LVal, SVal RVal, const clang::Stmt *S,
         }
         report_value_error(C, Sym,
                           "Saw assignment to root, but missed the allocation");
-      }      
+      }
     } else {
       logWithDump("- Found ValState for Sym", RValState);
       validateValue(RValState, C, Sym, "Trying to root value which may have been");

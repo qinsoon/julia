@@ -12,7 +12,7 @@ void unpinned_argument() {
     jl_svec_t *val = jl_svec1(NULL);  // expected-note{{Started tracking value here}}
     JL_GC_PROMISE_ROOTED(val);        // expected-note{{Value was rooted here}}
     look_at_value((jl_value_t*) val); // expected-warning{{Passing non-pinned value as argument to function that may GC}}
-                                      // expected-note@-1{{Passing non-pinned value as argument to function that may GC}}                                      
+                                      // expected-note@-1{{Passing non-pinned value as argument to function that may GC}}
 }
 
 int allow_unpinned() {
