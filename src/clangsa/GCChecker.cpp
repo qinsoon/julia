@@ -49,7 +49,7 @@ static const Stmt *getStmtForDiagnostics(const ExplodedNode *N)
 }
 
 // Turn on/off the log here
-#define DEBUG_LOG 0
+#define DEBUG_LOG 1
 
 class GCChecker
     : public Checker<
@@ -106,8 +106,14 @@ public:
                      : (P == Moved) ? "Moved"
                      : "Error");
       llvm::dbgs() << ",";
-      if (S == Rooted)
-        llvm::dbgs() << "(" << RootDepth << ")";
+      if (S == Rooted) {
+        llvm::dbgs() << "Root(";
+        if (Root) {
+          Root->dump();
+          llvm::dbgs() << ",";
+        }
+        llvm::dbgs() << RootDepth << ")";
+      }
     }
 
     bool operator==(const ValueState &VS) const {
@@ -1673,12 +1679,20 @@ bool GCChecker::evalCall(const CallEvent &Call, CheckerContext &C) const {
         PoppedRoots.push_back(I.getKey());
         State = State->remove<GCRootMap>(I.getKey());
         State = State->remove<GCPinMap>(I.getKey());
+        logWithDump("- pop root", I.getKey());
       }
     }
+    log("- Iterate value map");
     GCValueMapTy VMap = State->get<GCValueMap>();
     for (const MemRegion *R : PoppedRoots) {
+      logWithDump("-- check popped root", R);
       for (auto I = VMap.begin(), E = VMap.end(); I != E; ++I) {
+        logWithDump("--- check value", I.getKey());
+        logWithDump("--- check state", I.getData());
+        // FIXME: If this is a pop for TPin frame, we should remove TPin as well.
+        // For any region that is reachable from R, its pinning state should be reset.
         if (I.getData().isRootedBy(R)) {
+          logWithDump("--- no longer rooted", ValueState::getAllocated());
           State =
               State->set<GCValueMap>(I.getKey(), ValueState::getAllocated());
         }
@@ -1707,11 +1721,17 @@ bool GCChecker::evalCall(const CallEvent &Call, CheckerContext &C) const {
         return true;
       }
       const MemRegion *Region = MRV->getRegion();
-      State = State->set<GCRootMap>(Region, RootState::getRoot(CurrentDepth));
+      RootState RS = RootState::getRoot(CurrentDepth);
+      State = State->set<GCRootMap>(Region, RS);
+      logWithDump("- JL_GC_PUSH, Region", Region);
+      logWithDump("- JL_GC_PUSH, RS", RS);
+      PinState PS = PinState::getNoPin(-1);
       if (tpin)
-        State = State->set<GCPinMap>(Region, PinState::getTransitivePin(CurrentDepth));
+        PS = PinState::getTransitivePin(CurrentDepth);
       else
-        State = State->set<GCPinMap>(Region, PinState::getPin(CurrentDepth));
+        PS = PinState::getPin(CurrentDepth);
+      State = State->set<GCPinMap>(Region, PS);
+      logWithDump("- JL_GC_PUSH, PS", PS);
       // Now for the value
       SVal Value = State->getSVal(Region);
       SymbolRef Sym = Value.getAsSymbol();
@@ -1730,6 +1750,8 @@ bool GCChecker::evalCall(const CallEvent &Call, CheckerContext &C) const {
       else
         VS = ValueState::getPinned(VS);
       State = State->set<GCValueMap>(Sym, VS);
+      logWithDump("- JL_GC_PUSH, Sym", Sym);
+      logWithDump("- JL_GC_PUSH, VS", VS);
     }
     CurrentDepth += 1;
     State = State->set<GCDepth>(CurrentDepth);
