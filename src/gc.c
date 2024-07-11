@@ -2716,6 +2716,7 @@ size_t jl_maxrss(void);
 // Only one thread should be running in this function
 static int _jl_gc_collect(jl_ptls_t ptls, jl_gc_collection_t collection)
 {
+    jl_save_context_for_conservative_scanning(ptls, NULL);
     combine_thread_gc_counts(&gc_num);
 
     jl_gc_markqueue_t *mq = &ptls->mark_queue;

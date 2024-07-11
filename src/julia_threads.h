@@ -282,6 +282,10 @@ typedef struct _jl_tls_states_t {
     size_t malloc_sz_since_last_poll;
 #endif
 
+#ifdef GC_SAVE_CONTEXT_FOR_CONSERVATIVE_SCANNING
+    ucontext_t ctx_at_the_time_gc_started;
+#endif
+
     JULIA_DEBUG_SLEEPWAKE(
         uint64_t uv_run_enter;
         uint64_t uv_run_leave;

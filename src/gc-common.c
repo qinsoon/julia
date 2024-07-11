@@ -968,3 +968,19 @@ static int gc_logging_enabled = 0;
 JL_DLLEXPORT void jl_enable_gc_logging(int enable) {
     gc_logging_enabled = enable;
 }
+
+JL_DLLEXPORT void jl_save_context_for_conservative_scanning(jl_ptls_t ptls, void *ctx)
+{
+#ifdef GC_SAVE_CONTEXT_FOR_CONSERVATIVE_SCANNING
+    if (ctx == NULL) {
+        // Save the context for the thread as it was running at the time of the call
+        int r = getcontext(&ptls->ctx_at_the_time_gc_started);
+        if (r == -1) {
+            jl_safe_printf("Failed to save context for conservative scanning\n");
+            abort();
+        }
+        return;
+    }
+    memcpy(&ptls->ctx_at_the_time_gc_started, ctx, sizeof(ucontext_t));
+#endif
+}
