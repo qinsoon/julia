@@ -48,7 +48,7 @@ SRCS := \
 	jltypes gf typemap smallintset ast builtins module interpreter symbol \
 	dlload sys init task array staticdata toplevel jl_uv datatype \
 	simplevector runtime_intrinsics precompile jloptions mtarraylist \
-	threading partr stackwalk gc-common gc gc-debug gc-pages gc-stacks gc-alloc-profiler method \
+	threading partr stackwalk gc-common gc gc-debug gc-pages gc-stacks gc-alloc-profiler gc-page-profiler method \
 	mmtk-gc jlapi signal-handling safepoint timing subtype rtutils gc-heap-snapshot \
 	crc32c APInt-C processor ircode opaque_closure codegen-stubs coverage runtime_ccall
 

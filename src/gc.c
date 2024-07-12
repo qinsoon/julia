@@ -2716,6 +2716,7 @@ size_t jl_maxrss(void);
 // Only one thread should be running in this function
 static int _jl_gc_collect(jl_ptls_t ptls, jl_gc_collection_t collection)
 {
+    jl_save_context_for_conservative_scanning(ptls, NULL);
     combine_thread_gc_counts(&gc_num);
 
     jl_gc_markqueue_t *mq = &ptls->mark_queue;
@@ -3578,7 +3579,22 @@ JL_DLLEXPORT jl_value_t *jl_gc_internal_obj_base_ptr(void *p)
     return NULL;
 }
 
+JL_DLLEXPORT void jl_gc_post_alloc_slow(void* obj, int size) JL_NOTSAFEPOINT
+{
+    jl_unreachable();
+}
+
 JL_DLLEXPORT void jl_gc_wb1_noinline(const void *parent) JL_NOTSAFEPOINT
+{
+    jl_unreachable();
+}
+
+JL_DLLEXPORT void jl_gc_preserve_begin_hook(int n, ...) JL_NOTSAFEPOINT
+{
+    jl_unreachable();
+}
+
+JL_DLLEXPORT void jl_gc_preserve_end_hook(void) JL_NOTSAFEPOINT
 {
     jl_unreachable();
 }

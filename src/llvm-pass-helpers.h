@@ -134,6 +134,8 @@ namespace jl_intrinsics {
     extern const IntrinsicDescription safepoint;
 
 #ifdef MMTK_GC
+    extern const IntrinsicDescription gcPreserveBeginHook;
+    extern const IntrinsicDescription gcPreserveEndHook;
     extern const IntrinsicDescription writeBarrier1;
     extern const IntrinsicDescription writeBarrier2;
     extern const IntrinsicDescription writeBarrierBinding;
@@ -168,11 +170,14 @@ namespace jl_well_known {
     extern const WellKnownFunctionDescription GCAllocTyped;
 
 #ifdef MMTK_GC
+    extern const WellKnownFunctionDescription GCPreserveBeginHook;
+    extern const WellKnownFunctionDescription GCPreserveEndHook;
     extern const WellKnownFunctionDescription GCWriteBarrier1;
     extern const WellKnownFunctionDescription GCWriteBarrier2;
     extern const WellKnownFunctionDescription GCWriteBarrierBinding;
     extern const WellKnownFunctionDescription GCWriteBarrier1Slow;
     extern const WellKnownFunctionDescription GCWriteBarrier2Slow;
+    extern const WellKnownFunctionDescription GCPostAllocSlow;
 #endif
 }
 
