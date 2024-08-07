@@ -471,6 +471,7 @@ static Value *literal_pointer_val(jl_codectx_t &ctx, jl_value_t *p)
 {
     if (p == NULL)
         return Constant::getNullValue(ctx.types().T_pjlvalue);
+    PTR_PIN(p);
     if (!ctx.emission_context.imaging)
         return literal_static_pointer_val(p, ctx.types().T_pjlvalue);
     Value *pgv = literal_pointer_val_slot(ctx, p);
@@ -486,6 +487,7 @@ static Value *literal_pointer_val(jl_codectx_t &ctx, jl_binding_t *p)
     // emit a pointer to any jl_value_t which will be valid across reloading code
     if (p == NULL)
         return Constant::getNullValue(ctx.types().T_pjlvalue);
+    PTR_PIN(p);
     if (!ctx.emission_context.imaging)
         return literal_static_pointer_val(p, ctx.types().T_pjlvalue);
     // bindings are prefixed with jl_bnd#
