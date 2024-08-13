@@ -110,18 +110,19 @@ inline void *jl_realloc_aligned(void *d, size_t sz, size_t oldsz,
     }
     return b;
 }
+#endif
+
 inline void jl_free_aligned(void *p) JL_NOTSAFEPOINT
 {
     free(p);
 }
-#endif
 
 void jl_gc_free_array(jl_array_t *a) JL_NOTSAFEPOINT
 {
     if (a->flags.how == 2) {
         char *d = (char*)a->data - a->offset*a->elsize;
         if (a->flags.isaligned)
-            jl_free_aligned(d);
+            free(d);
         else
             free(d);
         gc_num.freed += jl_array_nbytes(a);

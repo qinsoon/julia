@@ -665,6 +665,7 @@ static void allocate_segv_handler(void)
 
 static void *alloc_sigstack(size_t *ssize)
 {
+    fprintf(stderr, "alloc_sigstack\n");
     void *stk = jl_malloc_stack(ssize, NULL);
     if (stk == NULL)
         jl_errorf("fatal error allocating signal stack: mmap: %s", strerror(errno));

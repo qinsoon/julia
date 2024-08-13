@@ -65,6 +65,8 @@ static void *malloc_stack(size_t bufsz) JL_NOTSAFEPOINT
     madvise(stk, bufsz, MADV_NOHUGEPAGE);
 #endif
 #endif
+    uint32_t n_stacks = jl_atomic_load_relaxed(&num_stack_mappings);
+    fprintf(stderr, "!!!Allocated stack %d: %p to %p\n", n_stacks, stk, (char*)stk + bufsz);
     jl_atomic_fetch_add(&num_stack_mappings, 1);
     return stk;
 }
@@ -72,6 +74,8 @@ static void *malloc_stack(size_t bufsz) JL_NOTSAFEPOINT
 void free_stack(void *stkbuf, size_t bufsz)
 {
     munmap(stkbuf, bufsz);
+    uint32_t n_stacks = jl_atomic_load_relaxed(&num_stack_mappings);
+    fprintf(stderr, "!!!Free stack %d: %p to %p\n", n_stacks, stkbuf, (char*)stkbuf + bufsz);
     jl_atomic_fetch_add(&num_stack_mappings, -1);
 }
 #endif

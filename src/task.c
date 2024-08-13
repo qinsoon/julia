@@ -1158,6 +1158,7 @@ static void jl_set_fiber(jl_ucontext_t *t)
 #if defined(JL_HAVE_UNW_CONTEXT) || defined(JL_HAVE_ASM)
 static char *jl_alloc_fiber(_jl_ucontext_t *t, size_t *ssize, jl_task_t *owner)
 {
+    fprintf(stderr, "jl_alloc_fiber: owner task %p\n", owner);
     char *stkbuf = (char*)jl_malloc_stack(ssize, owner);
     if (stkbuf == NULL)
         return NULL;
@@ -1571,6 +1572,8 @@ jl_task_t *jl_init_root_task(jl_ptls_t ptls, void *stack_lo, void *stack_hi)
     if (jl_options.handle_signals == JL_OPTIONS_HANDLE_SIGNALS_ON)
         jl_install_thread_signal_handler(ptls);
 
+    fprintf(stderr, "jl_init_root_task: ct = %p, ct.stkbuf = %p, ct.bufsz = %ld\n", ct, ct->stkbuf, ct->bufsz);
+    fprintf(stderr, "jl_init_root_task: ptls->stackbase = %p, ptls->stacksize = %ld\n", ptls->stackbase, ptls->stacksize);
     return ct;
 }
 

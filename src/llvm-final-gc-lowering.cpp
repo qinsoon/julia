@@ -147,6 +147,11 @@ void FinalLowerGC::lowerPushGCFrame(CallInst *target, Function &F)
 
     IRBuilder<> builder(target->getContext());
     builder.SetInsertPoint(&*(++BasicBlock::iterator(target)));
+    size_t encode = JL_GC_ENCODE_PUSHARGS_NO_TPIN(nRoots);
+    if ((encode & 4) == 0) {
+        printf("encode %d as %ld, which is TPIN\n", nRoots, encode);
+        exit(1);
+    }
     StoreInst *inst = builder.CreateAlignedStore(
                 ConstantInt::get(getSizeTy(F.getContext()), JL_GC_ENCODE_PUSHARGS_NO_TPIN(nRoots)),
                 builder.CreateBitCast(

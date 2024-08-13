@@ -1826,6 +1826,11 @@ static uint64_t getAddressForFunction(StringRef fname)
 // helper function for adding a DLLImport (dlsym) address to the execution engine
 void add_named_global(StringRef name, void *addr)
 {
+    uintptr_t addr_int = (uintptr_t) addr;
+    if (addr_int >= 0x20000000000 && addr_int < 0x40000000000) {
+        printf("Global %s (%p) in Immix space\n", name, addr_int);
+        exit(1);
+    }
     jl_ExecutionEngine->addGlobalMapping(name, (uint64_t)(uintptr_t)addr);
 }
 
