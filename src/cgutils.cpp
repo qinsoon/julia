@@ -491,6 +491,7 @@ static Value *literal_pointer_val(jl_codectx_t &ctx, jl_binding_t *p)
     if (!ctx.emission_context.imaging)
         // literal_static_pointer_val will pin p.
         return literal_static_pointer_val(p, ctx.types().T_pjlvalue);
+    PTR_PIN(p);
     // bindings are prefixed with jl_bnd#
     PTR_PIN(p);
     Value *pgv = julia_pgv(ctx, "jl_bnd#", p->name, p->owner, p);
