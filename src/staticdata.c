@@ -2491,6 +2491,7 @@ static void jl_save_system_image_to_stream(ios_t *f, jl_array_t *mod_array,
     arraylist_new(&gvars, 0);
     arraylist_new(&external_fns, 0);
     if (native_functions) {
+        // This copies jl_value_t* from jl_value_to_llvm to gvars
         jl_get_llvm_gvs(native_functions, &gvars);
         jl_get_llvm_external_fns(native_functions, &external_fns);
     }
