@@ -361,6 +361,7 @@ void *jl_create_native_impl(jl_array_t *methods, LLVMOrcThreadSafeModuleRef llvm
     size_t idx = 0;
     for (auto &global : params.globals) {
         gvars[idx] = global.second->getName().str();
+        PTR_PIN(global.first);
         data->jl_value_to_llvm[idx] = global.first;
         idx++;
     }
