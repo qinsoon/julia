@@ -95,7 +95,7 @@ typedef struct {
     std::vector<GlobalValue*> jl_sysimg_fvars;
     std::vector<GlobalValue*> jl_sysimg_gvars;
     std::map<jl_code_instance_t*, std::tuple<uint32_t, uint32_t>> jl_fvar_map;
-    std::vector<void*> jl_value_to_llvm;
+    std::vector<jl_pinned_ref(jl_value_t)> jl_value_to_llvm;
     std::vector<jl_code_instance_t*> jl_external_to_llvm;
 } jl_native_code_desc_t;
 
@@ -361,7 +361,6 @@ void *jl_create_native_impl(jl_array_t *methods, LLVMOrcThreadSafeModuleRef llvm
     size_t idx = 0;
     for (auto &global : params.globals) {
         gvars[idx] = global.second->getName().str();
-        PTR_PIN(global.first);
         data->jl_value_to_llvm[idx] = global.first;
         idx++;
     }

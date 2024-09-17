@@ -1441,6 +1441,7 @@ struct jl_cgval_t {
         promotion_point(nullptr),
         promotion_ssa(-1)
     {
+        PTR_PIN(typ);
         assert(TIndex == NULL || TIndex->getType() == getInt8Ty(TIndex->getContext()));
     }
     jl_cgval_t(Value *Vptr, bool isboxed, jl_value_t *typ, Value *tindex, MDNode *tbaa) : // general pointer constructor
@@ -1455,6 +1456,7 @@ struct jl_cgval_t {
         promotion_point(nullptr),
         promotion_ssa(-1)
     {
+        PTR_PIN(typ);
         if (Vboxed)
             assert(Vboxed->getType() == JuliaType::get_prjlvalue_ty(Vboxed->getContext()));
         assert(tbaa != NULL);
@@ -1474,6 +1476,8 @@ struct jl_cgval_t {
         promotion_point(nullptr),
         promotion_ssa(-1)
     {
+        PTR_PIN(typ);
+        PTR_PIN(constant);
         assert(jl_is_datatype(typ));
         assert(constant);
     }
@@ -1489,6 +1493,8 @@ struct jl_cgval_t {
         promotion_point(v.promotion_point),
         promotion_ssa(v.promotion_ssa)
     {
+        PTR_PIN(typ);
+        PTR_PIN(constant);
         if (Vboxed)
             assert(Vboxed->getType() == JuliaType::get_prjlvalue_ty(Vboxed->getContext()));
         // this constructor expects we had a badly or equivalently typed version
@@ -1512,6 +1518,7 @@ struct jl_cgval_t {
         promotion_point(nullptr),
         promotion_ssa(-1)
     {
+        PTR_PIN(jl_bottom_type);
     }
 };
 
@@ -1551,14 +1558,14 @@ public:
     IRBuilder<> builder;
     jl_codegen_params_t &emission_context;
     llvm::MapVector<jl_code_instance_t*, jl_codegen_call_target_t> call_targets;
-    std::map<void*, GlobalVariable*> &global_targets;
+    std::map<jl_pinned_ref(jl_value_t), GlobalVariable*> &global_targets;
     std::map<std::tuple<jl_code_instance_t*, bool>, GlobalVariable*> &external_calls;
     Function *f = NULL;
     // local var info. globals are not in here.
     std::vector<jl_varinfo_t> slots;
     std::map<int, jl_varinfo_t> phic_slots;
     std::vector<jl_cgval_t> SAvalues;
-    std::vector<std::tuple<jl_cgval_t, BasicBlock *, AllocaInst *, PHINode *, jl_value_t *>> PhiNodes;
+    std::vector<std::tuple<jl_cgval_t, BasicBlock *, AllocaInst *, PHINode *, jl_pinned_ref(jl_value_t)>> PhiNodes;
     std::vector<bool> ssavalue_assigned;
     std::vector<int> ssavalue_usecount;
     std::vector<orc::ThreadSafeModule> oc_modules;
@@ -1567,9 +1574,9 @@ public:
     jl_tbaacache_t tbaa_cache;
     jl_noaliascache_t aliasscope_cache;
     jl_method_instance_t *linfo = NULL;
-    jl_value_t *rettype = NULL;
+    jl_pinned_ref(jl_value_t) rettype;
     jl_code_info_t *source = NULL;
-    jl_array_t *code = NULL;
+    jl_pinned_ref(jl_array_t) code;
     size_t world = 0;
     const char *name = NULL;
     StringRef file{};
@@ -4277,12 +4284,12 @@ static jl_cgval_t emit_invoke(jl_codectx_t &ctx, const jl_cgval_t &lival, const 
             FunctionType *ft = ctx.f->getFunctionType();
             StringRef protoname = ctx.f->getName();
             if (ft == ctx.types().T_jlfunc) {
-                result = emit_call_specfun_boxed(ctx, ctx.rettype, protoname, nullptr, argv, nargs, rt);
+                result = emit_call_specfun_boxed(ctx, ctx.rettype.v, protoname, nullptr, argv, nargs, rt);
                 handled = true;
             }
             else if (ft != ctx.types().T_jlfuncparams) {
                 unsigned return_roots = 0;
-                result = emit_call_specfun_other(ctx, mi, ctx.rettype, protoname, nullptr, argv, nargs, &cc, &return_roots, rt);
+                result = emit_call_specfun_other(ctx, mi, ctx.rettype.v, protoname, nullptr, argv, nargs, &cc, &return_roots, rt);
                 handled = true;
             }
         }
@@ -4851,7 +4858,8 @@ static void emit_phinode_assign(jl_codectx_t &ctx, ssize_t idx, jl_value_t *r)
                 maybe_bitcast(ctx, decay_derived(ctx, phi), getInt8PtrTy(ctx.builder.getContext())));
             jl_cgval_t val = mark_julia_slot(ptr, phiType, Tindex_phi, ctx.tbaa().tbaa_stack); // XXX: this TBAA is wrong for ptr_phi
             val.Vboxed = ptr_phi;
-            ctx.PhiNodes.push_back(std::make_tuple(val, BB, dest, ptr_phi, r));
+            jl_pinned_ref(jl_value_t) p = to_jl_pinned_ref(jl_value_t, r);
+            ctx.PhiNodes.push_back(std::make_tuple(val, BB, dest, ptr_phi, p));
             ctx.SAvalues.at(idx) = val;
             ctx.ssavalue_assigned.at(idx) = true;
             return;
@@ -4860,7 +4868,8 @@ static void emit_phinode_assign(jl_codectx_t &ctx, ssize_t idx, jl_value_t *r)
             PHINode *Tindex_phi = PHINode::Create(getInt8Ty(ctx.builder.getContext()), jl_array_len(edges), "tindex_phi");
             BB->getInstList().insert(InsertPt, Tindex_phi);
             jl_cgval_t val = mark_julia_slot(NULL, phiType, Tindex_phi, ctx.tbaa().tbaa_stack);
-            ctx.PhiNodes.push_back(std::make_tuple(val, BB, dest, (PHINode*)NULL, r));
+            jl_pinned_ref(jl_value_t) p = to_jl_pinned_ref(jl_value_t, r);
+            ctx.PhiNodes.push_back(std::make_tuple(val, BB, dest, (PHINode*)NULL, p));
             ctx.SAvalues.at(idx) = val;
             ctx.ssavalue_assigned.at(idx) = true;
             return;
@@ -4895,7 +4904,8 @@ static void emit_phinode_assign(jl_codectx_t &ctx, ssize_t idx, jl_value_t *r)
         BB->getInstList().insert(InsertPt, value_phi);
         slot = mark_julia_type(ctx, value_phi, isboxed, phiType);
     }
-    ctx.PhiNodes.push_back(std::make_tuple(slot, BB, dest, value_phi, r));
+    jl_pinned_ref(jl_value_t) p = to_jl_pinned_ref(jl_value_t, r);
+    ctx.PhiNodes.push_back(std::make_tuple(slot, BB, dest, value_phi, p));
     ctx.SAvalues.at(idx) = slot;
     ctx.ssavalue_assigned.at(idx) = true;
     return;
@@ -6614,7 +6624,7 @@ static Function *gen_invoke_wrapper(jl_method_instance_t *lam, jl_value_t *jlret
     jl_codectx_t ctx(M->getContext(), params);
     ctx.f = w;
     ctx.linfo = lam;
-    ctx.rettype = jlretty;
+    ctx.rettype = to_jl_pinned_ref(jl_value_t, jlretty);
     ctx.world = 0;
 
     BasicBlock *b0 = BasicBlock::Create(ctx.builder.getContext(), "top", w);
@@ -6936,7 +6946,7 @@ static jl_llvm_functions_t
     jl_codectx_t ctx(*params.tsctx.getContext(), params);
     jl_datatype_t *vatyp = NULL;
     JL_GC_PUSH2(&ctx.code, &vatyp);
-    ctx.code = src->code;
+    ctx.code = to_jl_pinned_ref(jl_array_t, src->code);
     ctx.source = src;
 
     std::map<int, BasicBlock*> labels;
@@ -6965,10 +6975,10 @@ static jl_llvm_functions_t
             ctx.vaSlot = ctx.nargs - 1;
     }
     toplevel = !jl_is_method(lam->def.method);
-    ctx.rettype = jlrettype;
+    ctx.rettype = to_jl_pinned_ref(jl_value_t, jlrettype);
     ctx.funcName = ctx.name;
     ctx.spvals_ptr = NULL;
-    jl_array_t *stmts = ctx.code;
+    jl_array_t *stmts = jl_pinned_ref_get(jl_array_t, ctx.code);
     size_t stmtslen = jl_array_dim0(stmts);
 
     // step 1b. unpack debug information
@@ -8154,13 +8164,13 @@ static jl_llvm_functions_t
     for (auto &tup : ctx.PhiNodes) {
         jl_cgval_t phi_result;
         PHINode *VN;
-        jl_value_t *r;
+        jl_pinned_ref(jl_value_t) r;
         AllocaInst *dest;
         BasicBlock *PhiBB;
         std::tie(phi_result, PhiBB, dest, VN, r) = tup;
         jl_value_t *phiType = phi_result.typ;
-        jl_array_t *edges = (jl_array_t*)jl_fieldref_noalloc(r, 0);
-        jl_array_t *values = (jl_array_t*)jl_fieldref_noalloc(r, 1);
+        jl_array_t *edges = (jl_array_t*)jl_fieldref_noalloc(r.v, 0);
+        jl_array_t *values = (jl_array_t*)jl_fieldref_noalloc(r.v, 1);
         PHINode *TindexN = cast_or_null<PHINode>(phi_result.TIndex);
         DenseSet<BasicBlock*> preds;
         for (size_t i = 0; i < jl_array_len(edges); ++i) {

@@ -295,7 +295,8 @@ static Value *julia_pgv(jl_codectx_t &ctx, const char *cname, void *addr)
     // emit a GlobalVariable for a jl_value_t named "cname"
     // store the name given so we can reuse it (facilitating merging later)
     // so first see if there already is a GlobalVariable for this address
-    GlobalVariable* &gv = ctx.global_targets[addr];
+    jl_pinned_ref(jl_value_t) p = to_jl_pinned_ref(jl_value_t, (jl_value_t*)addr);
+    GlobalVariable* &gv = ctx.global_targets[p];
     Module *M = jl_Module;
     StringRef localname;
     std::string gvname;

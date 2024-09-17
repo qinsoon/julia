@@ -206,6 +206,86 @@ void JL_UV_LOCK(void);
 #define JL_UV_UNLOCK() JL_UNLOCK(&jl_uv_mutex)
 
 #ifdef __cplusplus
+typedef struct _jl_pinned_value_t {
+    jl_value_t* v;
+
+    // Define the less-than operator for _jl_pinned_value_t
+    bool operator<(const _jl_pinned_value_t& other) const {
+        // Implement the comparison logic here
+        // For example, compare a relevant field of the struct
+        return (void*)this->v < (void*)other.v;
+    }
+} jl_pinned_value_t;
+#else
+typedef struct _jl_pinned_value_t {
+    jl_value_t* v;
+} jl_pinned_value_t;
+#endif
+
+#ifdef MMTK_GC
+#include "mmtk.h"
+#endif
+
+__attribute__((unused)) static jl_pinned_value_t assume_pinned(jl_value_t* v) JL_NOTSAFEPOINT {
+#ifdef MMTK_GC
+    assert(mmtk_is_pinned(v));
+#endif
+    jl_pinned_value_t r = { v };
+    return r;
+}
+
+__attribute__((unused)) static jl_pinned_value_t to_pinned(jl_value_t* v) JL_NOTSAFEPOINT {
+#ifdef MMTK_GC
+    PTR_PIN(v);
+#endif
+    jl_pinned_value_t r = { v };
+    return r;
+}
+
+#ifdef __cplusplus
+
+#define jl_pinned_ref(T) _jl_pinned_ref<T>
+#define assume_jl_pinned_ref(T, v) _jl_pinned_ref<T>::assume_pinned(v)
+#define to_jl_pinned_ref(T, v) _jl_pinned_ref<T>::to_pinned(v)
+#define jl_pinned_ref_get(T, r) r.v
+
+template<typename T>
+struct _jl_pinned_ref {
+    T* v;
+
+    static _jl_pinned_ref assume_pinned(T* v) JL_NOTSAFEPOINT {
+        #ifdef MMTK_GC
+        assert(mmtk_is_pinned(v));
+        #endif
+        _jl_pinned_ref r = {v};
+        return r;
+    }
+
+    static _jl_pinned_ref to_pinned(T* v) JL_NOTSAFEPOINT {
+        #ifdef MMTK_GC
+        PTR_PIN(v);
+        #endif
+        _jl_pinned_ref r = {v};
+        return r;
+    }
+
+    // Define the less-than operator for _jl_pinned_value_t
+    bool operator<(const _jl_pinned_ref& other) const {
+        // Implement the comparison logic here
+        // For example, compare a relevant field of the struct
+        return (void*)this->v < (void*)other.v;
+    }
+};
+
+#else
+#define __jl_wrapped_ref(T) struct { union { T* _typed_v; jl_value_t* _v; } inner }
+
+#define jl_pinned_ref(T) __jl_wrapped_ref(T)
+// #define jl_weak_ref(T) __jl_wrapped_ref(T)
+// #define jl_handle_ref(T) __jl_wrapped_ref(T)
+#endif
+
+#ifdef __cplusplus
 extern "C" {
 #endif
 

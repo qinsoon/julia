@@ -163,10 +163,10 @@ void jl_link_global(GlobalVariable *GV, void *addr)
     }
 }
 
-void jl_jit_globals(std::map<void *, GlobalVariable*> &globals)
+void jl_jit_globals(std::map<jl_pinned_ref(jl_value_t), GlobalVariable*> &globals)
 {
     for (auto &global : globals) {
-        jl_link_global(global.second, global.first);
+        jl_link_global(global.second, global.first.v);
     }
 }
 
@@ -214,7 +214,7 @@ static jl_callptr_t _jl_compile_codeinst(
         StringMap<orc::ThreadSafeModule*> NewExports;
         StringMap<void*> NewGlobals;
         for (auto &global : params.globals) {
-            NewGlobals[global.second->getName()] = global.first;
+            NewGlobals[global.second->getName()] = (void*)global.first.v;
         }
         for (auto &def : emitted) {
             orc::ThreadSafeModule &TSM = std::get<0>(def.second);

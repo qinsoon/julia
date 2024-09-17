@@ -643,7 +643,9 @@ void jl_compute_field_offsets(jl_datatype_t *st)
             }
         }
         assert(ptr_i == npointers);
+        int en = jl_gc_enable(0);
         st->layout = jl_get_layout(sz, nfields, npointers, alignm, haspadding, desc, pointers);
+        jl_gc_enable(en);
         if (should_malloc) {
             free(desc);
             if (npointers)
@@ -801,7 +803,9 @@ JL_DLLEXPORT jl_datatype_t *jl_new_primitivetype(jl_value_t *name, jl_module_t *
     // and we easily have a free bit for it in the DataType flags
     bt->isprimitivetype = 1;
     bt->isbitstype = (parameters == jl_emptysvec);
+    int en = jl_gc_enable(0);
     bt->layout = jl_get_layout(nbytes, 0, 0, alignm, 0, NULL, NULL);
+    jl_gc_enable(en);
     bt->instance = NULL;
     return bt;
 }
