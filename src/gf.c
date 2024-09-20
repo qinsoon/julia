@@ -431,7 +431,7 @@ JL_DLLEXPORT jl_code_instance_t *jl_new_codeinst(
     codeinst->argescapes = argescapes;
     codeinst->relocatability = relocatability;
     // Pin codeinst, as they are referenced by vectors and maps in _jl_codegen_params_t
-    PTR_PIN(codeinst);
+    OBJ_PIN(codeinst);
     return codeinst;
 }
 

@@ -1441,7 +1441,7 @@ struct jl_cgval_t {
         promotion_point(nullptr),
         promotion_ssa(-1)
     {
-        PTR_PIN(typ);
+        OBJ_PIN(typ);
         assert(TIndex == NULL || TIndex->getType() == getInt8Ty(TIndex->getContext()));
     }
     jl_cgval_t(Value *Vptr, bool isboxed, jl_value_t *typ, Value *tindex, MDNode *tbaa) : // general pointer constructor
@@ -1456,7 +1456,7 @@ struct jl_cgval_t {
         promotion_point(nullptr),
         promotion_ssa(-1)
     {
-        PTR_PIN(typ);
+        OBJ_PIN(typ);
         if (Vboxed)
             assert(Vboxed->getType() == JuliaType::get_prjlvalue_ty(Vboxed->getContext()));
         assert(tbaa != NULL);
@@ -1476,8 +1476,8 @@ struct jl_cgval_t {
         promotion_point(nullptr),
         promotion_ssa(-1)
     {
-        PTR_PIN(typ);
-        PTR_PIN(constant);
+        OBJ_PIN(typ);
+        OBJ_PIN(constant);
         assert(jl_is_datatype(typ));
         assert(constant);
     }
@@ -1493,8 +1493,8 @@ struct jl_cgval_t {
         promotion_point(v.promotion_point),
         promotion_ssa(v.promotion_ssa)
     {
-        PTR_PIN(typ);
-        PTR_PIN(constant);
+        OBJ_PIN(typ);
+        OBJ_PIN(constant);
         if (Vboxed)
             assert(Vboxed->getType() == JuliaType::get_prjlvalue_ty(Vboxed->getContext()));
         // this constructor expects we had a badly or equivalently typed version
@@ -1518,7 +1518,7 @@ struct jl_cgval_t {
         promotion_point(nullptr),
         promotion_ssa(-1)
     {
-        PTR_PIN(jl_bottom_type);
+        OBJ_PIN(jl_bottom_type);
     }
 };
 

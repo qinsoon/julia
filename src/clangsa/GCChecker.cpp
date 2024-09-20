@@ -4,8 +4,8 @@
 // * args need to be pinned
 // * JL_ROOTING_ARGUMENT and JL_ROOTED_ARGUMENT will propagate pinning state as well.
 // * The checker may not consider alias for derived pointers in some cases.
-//   * if f(x) returns a derived pointer from x, a = f(x); b = f(x); PTR_PIN(a); The checker will NOT find b as pinned.
-//   * a = x->y; b = x->y; PTR_PIN(a); The checker will find b as pinned.
+//   * if f(x) returns a derived pointer from x, a = f(x); b = f(x); OBJ_PIN(a); The checker will NOT find b as pinned.
+//   * a = x->y; b = x->y; OBJ_PIN(a); The checker will find b as pinned.
 //   * Need to see if this affects correctness.
 // * The checker may report some vals as moved even if there is a new load for the val after safepoint.
 //   * f(x->a); jl_safepoint(); f(x->a); x->a is loaded after a safepoint, but the checker may report errors. This seems fine, as the compiler may hoist the load.
@@ -1575,7 +1575,7 @@ void GCChecker::checkPreCall(const CallEvent &Call, CheckerContext &C) const {
       FD->getName() == "JL_GC_PROMISE_ROOTED")
     return;
   if (FD && FD->getDeclName().isIdentifier() &&
-      (FD->getName() == "PTR_PIN" || FD->getName() == "PTR_UNPIN"))
+      (FD->getName() == "OBJ_PIN" || FD->getName() == "PTR_UNPIN"))
     return;
   for (unsigned idx = 0; idx < NumArgs; ++idx) {
     SVal Arg = Call.getArgSVal(idx);
@@ -1779,7 +1779,7 @@ bool GCChecker::evalCall(const CallEvent &Call, CheckerContext &C) const {
     C.addTransition(
         C.getState()->set<GCValueMap>(Sym, ValueState::getRooted(nullptr, ValueState::NotPinned -1)));
     return true;
-  } else if (name == "PTR_PIN" || name == "PTRHASH_PIN") {
+  } else if (name == "OBJ_PIN" || name == "PTRHASH_PIN") {
     SVal Arg = C.getSVal(CE->getArg(0));
     SymbolRef Sym = Arg.getAsSymbol();
     if (!Sym) {
@@ -1795,7 +1795,7 @@ bool GCChecker::evalCall(const CallEvent &Call, CheckerContext &C) const {
 
     auto MRV = Arg.getAs<loc::MemRegionVal>();
     if (!MRV) {
-      report_error(C, "PTR_PIN with something other than a local variable");
+      report_error(C, "OBJ_PIN with something other than a local variable");
       return true;
     }
     const MemRegion *Region = MRV->getRegion();

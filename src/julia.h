@@ -27,6 +27,8 @@ extern "C" {
 #endif
 
 extern int mmtk_object_is_managed_by_mmtk(void* addr);
+extern unsigned char mmtk_pin_pointer(void* ptr);
+extern unsigned char mmtk_unpin_pointer(void* ptr);
 extern unsigned char mmtk_pin_object(void* obj);
 extern unsigned char mmtk_unpin_object(void* obj);
 #ifdef __clang_gcanalyzer__
@@ -36,8 +38,8 @@ extern void PTRHASH_UNPIN(void* key) JL_NOTSAFEPOINT;
 // FIXME: Pinning objects that get hashed in the ptrhash table
 // until we implement address space hashing.
 #ifdef MMTK_GC
-#define PTRHASH_PIN(key) mmtk_pin_object(key);
-#define PTRHASH_UNPIN(key) mmtk_unpin_object(key);
+#define PTRHASH_PIN(key) if (key) mmtk_pin_pointer(key);
+#define PTRHASH_UNPIN(key) if (key) mmtk_unpin_pointer(key);
 #else
 #define PTRHASH_PIN(key)
 #define PTRHASH_UNPIN(key)

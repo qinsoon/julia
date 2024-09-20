@@ -8,20 +8,28 @@ extern "C" {
 #endif
 
 extern int mmtk_object_is_managed_by_mmtk(void* addr);
+extern unsigned char mmtk_pin_pointer(void* ptr);
+extern unsigned char mmtk_unpin_pointer(void* ptr);
+extern unsigned char mmtk_is_pointer_pinned(void* ptr);
 extern unsigned char mmtk_pin_object(void* obj);
 extern unsigned char mmtk_unpin_object(void* obj);
+extern unsigned char mmtk_is_object_pinned(void* obj);
 
 #ifdef __clang_gcanalyzer__
-extern void PTR_PIN(void* key) JL_NOTSAFEPOINT;
+extern void OBJ_PIN(void* key) JL_NOTSAFEPOINT;
 extern void PTR_UNPIN(void* key) JL_NOTSAFEPOINT;
 #else
 
 #ifdef MMTK_GC
-#define PTR_PIN(key) mmtk_pin_object(key);
-#define PTR_UNPIN(key) mmtk_unpin_object(key);
+#define PTR_PIN(key) if (key) mmtk_pin_pointer(key);
+#define PTR_UNPIN(key) if (key) mmtk_unpin_pointer(key);
+#define OBJ_PIN(key) if (key) mmtk_pin_object(key);
+#define OBJ_UNPIN(key) if (key) mmtk_unpin_object(key);
 #else
 #define PTR_PIN(key)
 #define PTR_UNPIN(key)
+#define OBJ_PIN(key)
+#define OBJ_UNPIN(key)
 #endif
 
 #endif
@@ -228,7 +236,7 @@ typedef struct _jl_pinned_value_t {
 
 __attribute__((unused)) static jl_pinned_value_t assume_pinned(jl_value_t* v) JL_NOTSAFEPOINT {
 #ifdef MMTK_GC
-    assert(mmtk_is_pinned(v));
+    assert(mmtk_is_object_pinned(v));
 #endif
     jl_pinned_value_t r = { v };
     return r;
@@ -236,7 +244,7 @@ __attribute__((unused)) static jl_pinned_value_t assume_pinned(jl_value_t* v) JL
 
 __attribute__((unused)) static jl_pinned_value_t to_pinned(jl_value_t* v) JL_NOTSAFEPOINT {
 #ifdef MMTK_GC
-    PTR_PIN(v);
+    OBJ_PIN(v);
 #endif
     jl_pinned_value_t r = { v };
     return r;
@@ -263,7 +271,7 @@ struct _jl_pinned_ref {
 
     static _jl_pinned_ref to_pinned(T* v) JL_NOTSAFEPOINT {
         #ifdef MMTK_GC
-        PTR_PIN(v);
+        OBJ_PIN(v);
         #endif
         _jl_pinned_ref r = {v};
         return r;
@@ -668,7 +676,7 @@ STATIC_INLINE jl_gc_tracked_buffer_t *jl_gc_alloc_buf(jl_ptls_t ptls, size_t sz)
     // introspect the object to update the a->data field. To avoid doing that and
     // making scan_object much more complex we simply enforce that both owner and
     // buffers are always pinned
-    PTR_PIN(buf);
+    OBJ_PIN(buf);
     return buf;
 }
 

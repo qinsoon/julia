@@ -242,7 +242,7 @@ void add_named_global(StringRef name, void *addr);
 
 static inline Constant *literal_static_pointer_val(const void *p, Type *T)
 {
-    PTR_PIN((void*)p);
+    PTR_PIN((void*)p); // This may point to non-mmtk heap memory.
     // this function will emit a static pointer into the generated code
     // the generated code will only be valid during the current session,
     // and thus, this should typically be avoided in new API's
