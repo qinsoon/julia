@@ -475,6 +475,7 @@ static Value *literal_pointer_val(jl_codectx_t &ctx, jl_value_t *p)
     if (p == NULL)
         return Constant::getNullValue(ctx.types().T_pjlvalue);
     if (!ctx.emission_context.imaging)
+        // literal_static_pointer_val will pin p.
         return literal_static_pointer_val(p, ctx.types().T_pjlvalue);
     OBJ_PIN(p);
     Value *pgv = literal_pointer_val_slot(ctx, p);
@@ -491,6 +492,7 @@ static Value *literal_pointer_val(jl_codectx_t &ctx, jl_binding_t *p)
     if (p == NULL)
         return Constant::getNullValue(ctx.types().T_pjlvalue);
     if (!ctx.emission_context.imaging)
+        // literal_static_pointer_val will pin p.
         return literal_static_pointer_val(p, ctx.types().T_pjlvalue);
     OBJ_PIN(p);
     // bindings are prefixed with jl_bnd#
