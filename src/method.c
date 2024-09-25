@@ -450,7 +450,7 @@ JL_DLLEXPORT jl_method_instance_t *jl_new_method_instance_uninit(void)
     li->cache_with_orig = 0;
     li->precompiled = 0;
     // jl_method_instance_t needs to be pinned, as it is referenced in a map in JITDebugInfoRegistry
-    PTR_PIN(li);
+    OBJ_PIN(li);
     return li;
 }
 
