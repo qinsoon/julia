@@ -676,6 +676,13 @@ void jl_gc_notify_image_alloc(char* img_data, size_t len)
     mmtk_immortal_region_post_alloc((void*)img_data, len);
 }
 
+JL_DLLEXPORT void jl_gc_pin(jl_value_t* obj)
+{
+    if (obj) {
+        mmtk_pin_object(obj);
+    }
+}
+
 #ifdef __cplusplus
 }
 #endif
