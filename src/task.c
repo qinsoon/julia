@@ -924,6 +924,12 @@ JL_DLLEXPORT jl_task_t *jl_new_task(jl_function_t *start, jl_value_t *completion
     t->start = start;
     t->result = jl_nothing;
     t->donenotify = completion_future;
+    // completion_future is a GenericCondition with SpinLock.
+    // I am not sure why we have to pin this. But, if we don't pin it,
+    // it may get moved, and we still use the invalid old reference somehow.
+    // See https://github.com/mmtk/mmtk-julia/issues/179.
+    // TODO: We should understand where we get the invalid reference from.
+    OBJ_PIN(completion_future);
     jl_atomic_store_relaxed(&t->_isexception, 0);
     // Inherit logger state from parent task
     t->logstate = ct->logstate;
