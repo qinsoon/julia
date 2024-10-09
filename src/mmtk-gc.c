@@ -29,6 +29,9 @@ JL_DLLEXPORT void jl_gc_set_cb_notify_external_alloc(jl_gc_cb_notify_external_al
 JL_DLLEXPORT void jl_gc_set_cb_notify_external_free(jl_gc_cb_notify_external_free_t cb, int enable)
 {
 }
+JL_DLLEXPORT void jl_gc_set_cb_notify_gc_pressure(jl_gc_cb_notify_gc_pressure_t cb, int enable)
+{
+}
 JL_DLLEXPORT int64_t jl_gc_pool_live_bytes(void)
 {
     mmtk_unreachable();
