@@ -424,7 +424,7 @@ static uintptr_t NOINLINE jl_object_id__cold(jl_datatype_t *dt, jl_value_t *v) J
     if (dt->name->mutabl) {
         // FIXME: Pinning objects that get hashed
         // until we implement address space hashing.
-        PTR_PIN(v); // v may point to stack?
+        OBJ_PIN(v);
         return inthash((uintptr_t)v);
     }
     return immut_id_(dt, v, dt->hash);
