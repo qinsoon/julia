@@ -206,7 +206,10 @@ DEP_LIBS_STAGED_ALL := llvm llvm-tools clang llvmunwind unwind libuv pcre \
 	openlibm dsfmt blastrampoline openblas lapack gmp mpfr patchelf utf8proc \
 	objconv openssl libssh2 nghttp2 curl libgit2 libwhich zlib p7zip csl \
 	sanitizers libsuitesparse lld libtracyclient ittapi nvtx JuliaSyntax \
-	terminfo mmtk_julia
+	terminfo
+ifneq (${MMTK_PLAN},None)
+DEP_LIBS_STAGED_ALL += mmtk_julia
+endif
 DEP_LIBS_ALL := $(DEP_LIBS_STAGED_ALL)
 
 ifneq ($(USE_BINARYBUILDER_OPENBLAS),0)
