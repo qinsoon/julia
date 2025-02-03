@@ -906,28 +906,28 @@ JL_DLLEXPORT void jl_set_io_loop_tid(int16_t tid)
 
 void _jl_mutex_init(jl_mutex_t *lock, const char *name) JL_NOTSAFEPOINT
 {
-    jl_atomic_store_relaxed(&lock->owner, (jl_task_t*)NULL);
+    jl_atomic_store_relaxed(&lock->owner, jl_gc_root_new(jl_task_t*, NULL));
     lock->count = 0;
     jl_profile_lock_init(lock, name);
 }
 
 void _jl_mutex_wait(jl_task_t *self, jl_mutex_t *lock, int safepoint)
 {
-    jl_task_t *owner = jl_atomic_load_relaxed(&lock->owner);
+    jl_task_t *owner = jl_atomic_load_relaxed(&jl_gc_root_get(lock->owner));
     if (owner == self) {
         lock->count++;
         return;
     }
     // Don't use JL_TIMING for instant acquires, results in large blowup of events
     jl_profile_lock_start_wait(lock);
-    if (owner == NULL && jl_atomic_cmpswap(&lock->owner, &owner, self)) {
+    if (owner == NULL && jl_atomic_cmpswap(&jl_gc_root_get(lock->owner), &owner, self)) {
         lock->count = 1;
         jl_profile_lock_acquired(lock);
         return;
     }
     JL_TIMING(LOCK_SPIN, LOCK_SPIN);
     while (1) {
-        if (owner == NULL && jl_atomic_cmpswap(&lock->owner, &owner, self)) {
+        if (owner == NULL && jl_atomic_cmpswap(&jl_gc_root_get(lock->owner), &owner, self)) {
             lock->count = 1;
             jl_profile_lock_acquired(lock);
             return;

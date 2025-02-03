@@ -120,7 +120,7 @@ struct _jl_task_t;
 
 // Recursive spin lock
 typedef struct {
-    _Atomic(struct _jl_task_t*) owner;
+    _Atomic(jl_gc_root(struct _jl_task_t*)) owner;
     uint32_t count;
 } jl_mutex_t;
 

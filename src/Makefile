@@ -518,6 +518,7 @@ endif
 
 clangsa: $(build_shlibdir)/libGCCheckerPlugin.$(SHLIB_EXT)
 clangsa: $(build_shlibdir)/libImplicitAtomicsPlugin.$(SHLIB_EXT)
+clangsa: $(build_shlibdir)/libHeapRefAnalyzerPlugin.$(SHLIB_EXT)
 
 # optarg is a required_argument for these
 SA_EXCEPTIONS-jloptions.c                   := -Xanalyzer -analyzer-config -Xanalyzer silence-checkers="core.NonNullParamChecker;unix.cstring.NullArg"
@@ -561,23 +562,39 @@ clang-tidy-%: $(SRCDIR)/%.cpp $(build_shlibdir)/libImplicitAtomicsPlugin.$(SHLIB
 		-load $(build_shlibdir)/libImplicitAtomicsPlugin.$(SHLIB_EXT) --checks='-clang-analyzer-*$(COMMA)-clang-diagnostic-*$(COMMA)concurrency-implicit-atomics' --warnings-as-errors='*' \
 		-- $(CLANGSA_FLAGS) $(CLANGSA_CXXFLAGS) $(LLVM_CXXFLAGS) $(JCPPFLAGS_CLANG) $(JCXXFLAGS_CLANG) $(JL_CXXFLAGS) $(DEBUGFLAGS_CLANG) -fcolor-diagnostics --system-header-prefix=llvm -Wno-deprecated-declarations -fno-caret-diagnostics -x c++)
 
+clang-saref-%: JL_CXXFLAGS += -UNDEBUG
+clang-saref-%: $(SRCDIR)/%.c $(build_shlibdir)/libHeapRefAnalyzerPlugin.$(SHLIB_EXT) .FORCE | analyzegc-deps-check
+	@$(call PRINT_ANALYZE, $(build_depsbindir)/clang -D__clang_gcanalyzer__ --analyze -Xanalyzer -analyzer-werror -Xanalyzer -analyzer-output=text --analyzer-no-default-checks \
+		-Xclang -load -Xclang $(build_shlibdir)/libHeapRefAnalyzerPlugin.$(SHLIB_EXT) -Xclang -analyzer-checker=core$(COMMA)julia.HeapRefChecker \
+		$(SA_EXCEPTIONS-$(notdir $<)) \
+		$(CLANGSA_FLAGS) $(JCPPFLAGS_CLANG) $(JCFLAGS_CLANG) $(JL_CFLAGS) $(DEBUGFLAGS_CLANG) -fcolor-diagnostics -x c $<)
+clang-saref-%: $(SRCDIR)/%.cpp $(build_shlibdir)/libHeapRefAnalyzerPlugin.$(SHLIB_EXT) .FORCE | analyzegc-deps-check
+	@$(call PRINT_ANALYZE, $(build_depsbindir)/clang -D__clang_gcanalyzer__ --analyze -Xanalyzer -analyzer-werror -Xanalyzer -analyzer-output=text --analyzer-no-default-checks \
+		-Xclang -load -Xclang $(build_shlibdir)/libHeapRefAnalyzerPlugin.$(SHLIB_EXT) -Xclang -analyzer-checker=core$(COMMA)julia.HeapRefChecker \
+		$(SA_EXCEPTIONS-$(notdir $<)) \
+		$(CLANGSA_FLAGS) $(CLANGSA_CXXFLAGS) $(LLVM_CXXFLAGS) $(JCPPFLAGS_CLANG) $(JCXXFLAGS_CLANG) $(JL_CXXFLAGS) $(DEBUGFLAGS_CLANG) -fcolor-diagnostics -x c++ $<)
+
 # set the exports for the source files based on where they are getting linked
 $(addprefix clang-sa-,$(SRCS)):      DEBUGFLAGS_CLANG += -DJL_LIBRARY_EXPORTS_INTERNAL
 $(addprefix clang-sagc-,$(SRCS)):    DEBUGFLAGS_CLANG += -DJL_LIBRARY_EXPORTS_INTERNAL
 $(addprefix clang-tidy-,$(SRCS)):    DEBUGFLAGS_CLANG += -DJL_LIBRARY_EXPORTS_INTERNAL
+$(addprefix clang-saref-,$(SRCS)):    DEBUGFLAGS_CLANG += -DJL_LIBRARY_EXPORTS_INTERNAL
 $(addprefix clang-sa-,$(CODEGEN_SRCS)):   DEBUGFLAGS_CLANG += -DJL_LIBRARY_EXPORTS_CODEGEN
 $(addprefix clang-sagc-,$(CODEGEN_SRCS)): DEBUGFLAGS_CLANG += -DJL_LIBRARY_EXPORTS_CODEGEN
 $(addprefix clang-tidy-,$(CODEGEN_SRCS)): DEBUGFLAGS_CLANG += -DJL_LIBRARY_EXPORTS_CODEGEN
+$(addprefix clang-saref-,$(CODEGEN_SRCS)): DEBUGFLAGS_CLANG += -DJL_LIBRARY_EXPORTS_CODEGEN
 
 # Add C files as a target of `analyzesrc` and `analyzegc` and `tidysrc`
 tidysrc: $(addprefix clang-tidy-,$(CODEGEN_SRCS) $(SRCS))
 analyzesrc: $(addprefix clang-sa-,$(CODEGEN_SRCS) $(SRCS))
+analyzeref: $(addprefix clang-saref-,$(CODEGEN_SRC) $(SRCS))
 analyzegc: $(addprefix clang-sagc-,$(filter-out $(basename $(SKIP_GC_CHECK)),$(CODEGEN_SRCS) $(SRCS)))
 analyze: analyzesrc analyzegc tidysrc
 
 clean-analyzegc:
 	rm -f $(build_shlibdir)/libGCCheckerPlugin.$(SHLIB_EXT)
 	rm -f $(build_shlibdir)/libImplicitAtomicsPlugin.$(SHLIB_EXT)
+	rm -f $(build_shlibdir)/libHeapRefAnalyzerPlugin.$(SHLIB_EXT)
 
 .FORCE:
 .PHONY: default all debug release clean cleanall clean-* libccalltest libllvmcalltest julia_flisp.boot.inc.phony analyzegc analyzesrc .FORCE

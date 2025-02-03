@@ -64,6 +64,11 @@
 #define container_of(ptr, type, member) \
     ((type *) ((char *)(ptr) - offsetof(type, member)))
 
+#define jl_gc_root(type) union { type _ref; }
+#define jl_gc_root_get(r) (r._ref)
+#define jl_gc_root_set(r, v) r._ref = v
+#define jl_gc_root_new(type, v) ((jl_gc_root(type)){ ._ref = (v) })
+
 typedef struct _jl_taggedvalue_t jl_taggedvalue_t;
 typedef struct _jl_tls_states_t *jl_ptls_t;
 
