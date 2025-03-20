@@ -1149,8 +1149,8 @@ struct _jl_gcframe_t {
 // #define JL_GC_ENCODE_PUSHFRAME_NO_TPIN(n)  ((((size_t)(n))<<3)|6)
 
 // these are transitively pinning
-#define JL_GC_ENCODE_PUSHARGS(n)   (((size_t)(n))<<3)
-#define JL_GC_ENCODE_PUSH(n)       ((((size_t)(n))<<3)|1)
+#define JL_GC_ENCODE_PUSHARGS(n)   (((size_t)(n))<<3|4)
+#define JL_GC_ENCODE_PUSH(n)       ((((size_t)(n))<<3)|5)
 #define JL_GC_DECODE_NROOTS(n)     (n >> 3)
 
 // these only pin the root object itself
