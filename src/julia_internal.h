@@ -374,6 +374,7 @@ jl_value_t *jl_gc_pool_alloc_noinline(jl_ptls_t ptls, int pool_offset,
 jl_value_t *jl_gc_big_alloc_noinline(jl_ptls_t ptls, size_t allocsz);
 #ifdef MMTK_GC
 JL_DLLIMPORT jl_value_t *jl_mmtk_gc_alloc_default(jl_ptls_t ptls, int osize, size_t align, void* ty);
+JL_DLLIMPORT jl_value_t *jl_mmtk_gc_alloc_nonmoving(jl_ptls_t ptls, int osize, size_t align, void* ty);
 JL_DLLIMPORT jl_value_t *jl_mmtk_gc_alloc_big(jl_ptls_t ptls, size_t allocsz);
 JL_DLLIMPORT extern void mmtk_post_alloc(void* mutator, void* obj, size_t bytes, int allocator);
 JL_DLLIMPORT extern void mmtk_initialize_collection(void* tls);
@@ -549,6 +550,11 @@ STATIC_INLINE jl_value_t *jl_gc_alloc_(jl_ptls_t ptls, size_t sz, void *ty)
     return v;
 }
 
+STATIC_INLINE jl_value_t *jl_gc_alloc_nonmoving_(jl_ptls_t ptls, size_t sz, void *ty)
+{
+    return jl_gc_alloc_(ptls, sz, ty);
+}
+
 #else  // MMTK_GC
 
 STATIC_INLINE jl_value_t *jl_gc_alloc_(jl_ptls_t ptls, size_t sz, void *ty)
@@ -567,6 +573,24 @@ STATIC_INLINE jl_value_t *jl_gc_alloc_(jl_ptls_t ptls, size_t sz, void *ty)
     maybe_record_alloc_to_profile(v, sz, (jl_datatype_t*)ty);
     return v;
 }
+
+STATIC_INLINE jl_value_t *jl_gc_alloc_nonmoving_(jl_ptls_t ptls, size_t sz, void *ty)
+{
+    jl_value_t *v;
+    const size_t allocsz = sz + sizeof(jl_taggedvalue_t);
+    if (sz <= GC_MAX_SZCLASS) {
+        v = jl_mmtk_gc_alloc_nonmoving(ptls, allocsz, 16, ty);
+    }
+    else {
+        if (allocsz < sz) // overflow in adding offs, size was "negative"
+            jl_throw(jl_memory_exception);
+        v = jl_mmtk_gc_alloc_big(ptls, allocsz);
+    }
+    jl_set_typeof(v, ty);
+    maybe_record_alloc_to_profile(v, sz, (jl_datatype_t*)ty);
+    return v;
+}
+
 #endif // MMTK_GC
 
 /* Programming style note: When using jl_gc_alloc, do not JL_GC_PUSH it into a
@@ -576,14 +600,20 @@ STATIC_INLINE jl_value_t *jl_gc_alloc_(jl_ptls_t ptls, size_t sz, void *ty)
  * safepoints will be caught by the GC analyzer.
  */
 JL_DLLEXPORT jl_value_t *jl_gc_alloc(jl_ptls_t ptls, size_t sz, void *ty);
+JL_DLLEXPORT jl_value_t *jl_gc_alloc_nonmoving(jl_ptls_t ptls, size_t sz, void *ty);
 // On GCC, only inline when sz is constant
 #ifdef __GNUC__
 #  define jl_gc_alloc(ptls, sz, ty)  \
     (__builtin_constant_p(sz) ?      \
      jl_gc_alloc_(ptls, sz, ty) :    \
      (jl_gc_alloc)(ptls, sz, ty))
+#  define jl_gc_alloc_nonmoving(ptls, sz, ty)  \
+     (__builtin_constant_p(sz) ?      \
+      jl_gc_alloc_nonmoving_(ptls, sz, ty) :    \
+      (jl_gc_alloc_nonmoving)(ptls, sz, ty))
 #else
 #  define jl_gc_alloc(ptls, sz, ty) jl_gc_alloc_(ptls, sz, ty)
+#  define jl_gc_alloc_nonmoving(ptls, sz, ty) jl_gc_alloc_nonmoving(ptls, sz, ty)
 #endif
 
 // jl_buff_tag must be an actual pointer here, so it cannot be confused for an actual type reference.

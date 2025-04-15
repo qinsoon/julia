@@ -15,7 +15,7 @@ JL_DLLEXPORT jl_module_t *jl_new_module_(jl_sym_t *name, uint8_t default_names)
 {
     jl_task_t *ct = jl_current_task;
     const jl_uuid_t uuid_zero = {0, 0};
-    jl_module_t *m = (jl_module_t*)jl_gc_alloc(ct->ptls, sizeof(jl_module_t),
+    jl_module_t *m = (jl_module_t*)jl_gc_alloc_nonmoving(ct->ptls, sizeof(jl_module_t),
                                                jl_module_type);
     assert(jl_is_symbol(name));
     m->name = name;
@@ -47,7 +47,7 @@ JL_DLLEXPORT jl_module_t *jl_new_module_(jl_sym_t *name, uint8_t default_names)
     }
     jl_module_export(m, name);
     JL_GC_POP();
-    OBJ_PIN(m); // modules are referenced in jl_current_modules (htable). They cannot move.
+    // OBJ_PIN(m); // modules are referenced in jl_current_modules (htable). They cannot move.
     return m;
 }
 

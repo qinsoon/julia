@@ -2475,6 +2475,7 @@ extern const void* MMTK_SIDE_VO_BIT_BASE_ADDRESS;
 
 #define MMTK_DEFAULT_IMMIX_ALLOCATOR (0)
 #define MMTK_IMMORTAL_BUMP_ALLOCATOR (0)
+#define MMTK_NONMOVING_BUMP_ALLOCATOR (1)
 
 // Directly call into MMTk for write barrier (debugging only)
 STATIC_INLINE void mmtk_gc_wb_full(const void *parent, const void *ptr) JL_NOTSAFEPOINT
@@ -2571,6 +2572,11 @@ STATIC_INLINE void* mmtk_immortal_alloc_fast(MMTkMutatorContext* mutator, size_t
     return bump_alloc_fast(mutator, (uintptr_t*)&allocator->cursor, (uintptr_t)allocator->limit, size, align, offset, 1);
 }
 
+STATIC_INLINE void* mmtk_nonmoving_alloc_fast(MMTkMutatorContext* mutator, size_t size, size_t align, size_t offset) {
+    BumpAllocator* allocator = &mutator->allocators.bump_pointer[MMTK_NONMOVING_BUMP_ALLOCATOR];
+    return bump_alloc_fast(mutator, (uintptr_t*)&allocator->cursor, (uintptr_t)allocator->limit, size, align, offset, 6); // 6 = nonmoving
+}
+
 STATIC_INLINE void mmtk_immortal_post_alloc_fast(MMTkMutatorContext* mutator, void* obj, size_t size) {
     if (MMTK_NEEDS_VO_BIT) {
         // set VO bit
@@ -2589,6 +2595,10 @@ STATIC_INLINE void mmtk_immortal_post_alloc_fast(MMTkMutatorContext* mutator, vo
             }
         }
     }
+}
+
+STATIC_INLINE void mmtk_nonmoving_post_alloc_fast(MMTkMutatorContext* mutator, void* obj, size_t size) {
+    mmtk_immortal_post_alloc_fast(mutator, obj, size);
 }
 
 #endif

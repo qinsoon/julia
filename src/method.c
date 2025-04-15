@@ -437,7 +437,7 @@ JL_DLLEXPORT jl_method_instance_t *jl_new_method_instance_uninit(void)
 {
     jl_task_t *ct = jl_current_task;
     jl_method_instance_t *li =
-        (jl_method_instance_t*)jl_gc_alloc(ct->ptls, sizeof(jl_method_instance_t),
+        (jl_method_instance_t*)jl_gc_alloc_nonmoving(ct->ptls, sizeof(jl_method_instance_t),
                                            jl_method_instance_type);
     li->def.value = NULL;
     li->specTypes = NULL;
@@ -450,7 +450,7 @@ JL_DLLEXPORT jl_method_instance_t *jl_new_method_instance_uninit(void)
     li->cache_with_orig = 0;
     li->precompiled = 0;
     // jl_method_instance_t needs to be pinned, as it is referenced in a map in JITDebugInfoRegistry
-    OBJ_PIN(li);
+    // OBJ_PIN(li);
     return li;
 }
 

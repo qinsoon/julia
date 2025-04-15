@@ -406,7 +406,7 @@ JL_DLLEXPORT jl_code_instance_t *jl_new_codeinst(
 {
     jl_task_t *ct = jl_current_task;
     assert(min_world <= max_world && "attempting to set invalid world constraints");
-    jl_code_instance_t *codeinst = (jl_code_instance_t*)jl_gc_alloc(ct->ptls, sizeof(jl_code_instance_t),
+    jl_code_instance_t *codeinst = (jl_code_instance_t*)jl_gc_alloc_nonmoving(ct->ptls, sizeof(jl_code_instance_t),
             jl_code_instance_type);
     codeinst->def = mi;
     codeinst->min_world = min_world;
@@ -431,7 +431,7 @@ JL_DLLEXPORT jl_code_instance_t *jl_new_codeinst(
     codeinst->argescapes = argescapes;
     codeinst->relocatability = relocatability;
     // Pin codeinst, as they are referenced by vectors and maps in _jl_codegen_params_t
-    OBJ_PIN(codeinst);
+    // OBJ_PIN(codeinst);
     return codeinst;
 }
 
