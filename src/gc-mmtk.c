@@ -97,36 +97,41 @@ void jl_gc_init(void) {
     // MMTK_MIN_HSIZE and MMTK_MAX_HSIZE environment variables
     long long min_heap_size;
     long long max_heap_size;
-    char* min_size_def = getenv("MMTK_MIN_HSIZE");
-    char* min_size_gb = getenv("MMTK_MIN_HSIZE_G");
 
-    char* max_size_def = getenv("MMTK_MAX_HSIZE");
-    char* max_size_gb = getenv("MMTK_MAX_HSIZE_G");
-
-    // If min and max values are not specified, set them to 0 here
-    // and use stock heuristics as defined in the binding
-    if (min_size_def != NULL) {
-        char *p;
-        double min_size = strtod(min_size_def, &p);
-        min_heap_size = (long) 1024 * 1024 * min_size;
-    } else if (min_size_gb != NULL) {
-        char *p;
-        double min_size = strtod(min_size_gb, &p);
-        min_heap_size = (long) 1024 * 1024 * 1024 * min_size;
+    if jl_options.hard_heap_limit != 0 {
+        min_heap_size = hard_heap_limit;
+        max_heap_size = hard_heap_limit;
     } else {
-        min_heap_size = 0;
-    }
+        char* min_size_def = getenv("MMTK_MIN_HSIZE");
+        char* min_size_gb = getenv("MMTK_MIN_HSIZE_G");
+        char* max_size_def = getenv("MMTK_MAX_HSIZE");
+        char* max_size_gb = getenv("MMTK_MAX_HSIZE_G");
 
-    if (max_size_def != NULL) {
-        char *p;
-        double max_size = strtod(max_size_def, &p);
-        max_heap_size = (long) 1024 * 1024 * max_size;
-    } else if (max_size_gb != NULL) {
-        char *p;
-        double max_size = strtod(max_size_gb, &p);
-        max_heap_size = (long) 1024 * 1024 * 1024 * max_size;
-    } else {
-        max_heap_size = 0;
+        // If min and max values are not specified, set them to 0 here
+        // and use stock heuristics as defined in the binding
+        if (min_size_def != NULL) {
+            char *p;
+            double min_size = strtod(min_size_def, &p);
+            min_heap_size = (long) 1024 * 1024 * min_size;
+        } else if (min_size_gb != NULL) {
+            char *p;
+            double min_size = strtod(min_size_gb, &p);
+            min_heap_size = (long) 1024 * 1024 * 1024 * min_size;
+        } else {
+            min_heap_size = 0;
+        }
+
+        if (max_size_def != NULL) {
+            char *p;
+            double max_size = strtod(max_size_def, &p);
+            max_heap_size = (long) 1024 * 1024 * max_size;
+        } else if (max_size_gb != NULL) {
+            char *p;
+            double max_size = strtod(max_size_gb, &p);
+            max_heap_size = (long) 1024 * 1024 * 1024 * max_size;
+        } else {
+            max_heap_size = 0;
+        }
     }
 
     // Assert that the number of stock GC threads is 0; MMTK uses the number of threads in jl_options.ngcthreads
