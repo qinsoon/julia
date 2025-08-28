@@ -1260,6 +1260,8 @@ Base.cconvert(::Type{Ptr{T}}, S::Strider{T}) where {T} = memoryref(S.data.ref, S
 
 @testset "Simple 3d strided views and permutes" for sz in ((5, 3, 2), (7, 11, 13))
     A = collect(reshape(1:prod(sz), sz))
+    # The following test takes pointers from A, we need to ensure A is not moved by GC.
+    Base.increment_pin_count!(A)
     S = Strider(vec(A), strides(A), sz)
     @test pointer(A) == pointer(S)
     for i in 1:prod(sz)
@@ -1318,10 +1320,13 @@ Base.cconvert(::Type{Ptr{T}}, S::Strider{T}) where {T} = memoryref(S.data.ref, S
     # constant propagation in the PermutedDimsArray constructor
     X = @inferred (A -> PermutedDimsArray(A, (2,3,1)))(A)
     @test @inferred((X -> PermutedDimsArray(X, (3,1,2)))(X)) == A
+    Base.decrement_pin_count!(A)
 end
 
 @testset "simple 2d strided views, permutes, transposes" for sz in ((5, 3), (7, 11))
     A = collect(reshape(1:prod(sz), sz))
+    # The following test takes pointers from A, we need to ensure A is not moved by GC.
+    Base.increment_pin_count!(A)
     S = Strider(vec(A), strides(A), sz)
     @test pointer(A) == pointer(S)
     for i in 1:prod(sz)
@@ -1387,6 +1392,7 @@ end
             @test Vp[i] == Avp[i] == Svp[i] == Avt[i] == Ava[i] == Svt[i] == Sva[i]
         end
     end
+    Base.decrement_pin_count!(A)
 end
 
 @testset "first/last n elements of $(typeof(itr))" for itr in (collect(1:9),
@@ -1915,6 +1921,7 @@ module IRUtils
 end
 
 function check_pointer_strides(A::AbstractArray)
+    Base.increment_pin_count!(A)
     # Make sure stride(A, i) is equivalent with strides(A)[i] (if 1 <= i <= ndims(A))
     dims = ntuple(identity, ndims(A))
     map(i -> stride(A, i), dims) == @inferred(strides(A)) || return false
@@ -1924,6 +1931,7 @@ function check_pointer_strides(A::AbstractArray)
     for i in eachindex(IndexLinear(), A)
         A[i] === Base.unsafe_load(pointer(A, i)) || return false
     end
+    Base.decrement_pin_count!(A)
     return true
 end
 
