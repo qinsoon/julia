@@ -680,7 +680,9 @@ static jl_value_t *get_replaceable_field(jl_value_t **addr, int mutabl) JL_GC_DI
             void **nullval = ptrhash_bp(&nullptrs, (void*)jl_typeof(fld));
             if (*nullval == HT_NOTFOUND) {
                 void *C_NULL = NULL;
-                *nullval = (void*)jl_new_bits(jl_typeof(fld), &C_NULL);
+                jl_value_t *new_fld = jl_new_bits(jl_typeof(fld), &C_NULL);
+                OBJHASH_PIN(new_fld);
+                *nullval = (void*)new_fld;
             }
             fld = (jl_value_t*)*nullval;
         }
@@ -691,6 +693,7 @@ static jl_value_t *get_replaceable_field(jl_value_t **addr, int mutabl) JL_GC_DI
 
 static uintptr_t jl_fptr_id(void *fptr)
 {
+    PTRHASH_PIN(fptr);
     void **pbp = ptrhash_bp(&fptr_to_id, fptr);
     if (*pbp == HT_NOTFOUND || fptr == NULL)
         return 0;
@@ -960,6 +963,7 @@ static void jl_insert_into_serialization_queue(jl_serializer_state *s, jl_value_
                     if (jl_object_in_image((jl_value_t*)def)) {
                         void **pfound = ptrhash_bp(&s->method_roots_index, def);
                         if (*pfound == HT_NOTFOUND) {
+                            OBJHASH_PIN(def);
                             *pfound = def;
                             size_t nwithkey = nroots_with_key(def, s->worklist_key);
                             if (nwithkey) {
@@ -1087,6 +1091,7 @@ static void jl_insert_into_serialization_queue(jl_serializer_state *s, jl_value_
 done_fields: ;
 
     // We've encountered an item we need to cache
+    OBJHASH_PIN(v);
     void **bp = ptrhash_bp(&serialization_order, v);
     assert(*bp == (void*)(uintptr_t)-2);
     arraylist_push(&serialization_queue, (void*) v);
@@ -1148,6 +1153,7 @@ static void jl_queue_for_serialization_(jl_serializer_state *s, jl_value_t *v, i
             immediate = 1;
     }
 
+    OBJHASH_PIN(v);
     void **bp = ptrhash_bp(&serialization_order, v);
     assert(!immediate || *bp != (void*)(uintptr_t)-2);
     if (*bp == HT_NOTFOUND)
@@ -1181,6 +1187,7 @@ static void jl_serialize_reachable(jl_serializer_state *s) JL_GC_DISABLED
         }
         prevlen = --object_worklist.len;
         jl_value_t *v = (jl_value_t*)object_worklist.items[prevlen];
+        OBJHASH_PIN(v);
         void **bp = ptrhash_bp(&serialization_order, (void*)v);
         assert(*bp != HT_NOTFOUND && *bp != (void*)(uintptr_t)-2);
         if (*bp == (void*)(uintptr_t)-1) { // might have been eagerly handled for post-order while in the lazy pre-order queue
@@ -1255,6 +1262,7 @@ static uintptr_t _backref_id(jl_serializer_state *s, jl_value_t *v, jl_array_t *
 {
     assert(v != NULL && "cannot get backref to NULL object");
     if (jl_is_symbol(v)) {
+        OBJHASH_PIN(v);
         void **pidx = ptrhash_bp(&symbol_table, v);
         void *idx = *pidx;
         if (idx == HT_NOTFOUND) {
