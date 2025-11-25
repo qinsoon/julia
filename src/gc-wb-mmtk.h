@@ -13,6 +13,12 @@ extern "C" {
 
 extern void mmtk_object_reference_write_post(void* mutator, const void* parent, const void* ptr);
 extern void mmtk_object_reference_write_slow(void* mutator, const void* parent, const void* ptr);
+extern void mmtk_memory_region_copy(void* mutator,
+                                 const void* src_owner,
+                                 const void* src_addr,
+                                 const void* dst_owner,
+                                 const void* dst_addr,
+                                 size_t count);
 extern const void* MMTK_SIDE_LOG_BIT_BASE_ADDRESS;
 
 #define MMTK_OBJECT_BARRIER (1)
@@ -67,7 +73,15 @@ STATIC_INLINE void jl_gc_wb_genericmemory_copy_boxed(const jl_value_t *dest_owne
                                           jl_genericmemory_t *src, _Atomic(void*) * src_p,
                                           size_t* n) JL_NOTSAFEPOINT
 {
-    mmtk_gc_wb_fast(dest_owner, (void*)0);
+    jl_task_t *ct = jl_current_task;
+    jl_ptls_t ptls = ct->ptls;
+    mmtk_memory_region_copy(&ptls->gc_tls.mmtk_mutator,
+                             jl_genericmemory_owner(src),
+                             src_p,
+                             dest_owner,
+                             dest_p,
+                             *n);
+    *n = 0;
 }
 
 STATIC_INLINE void jl_gc_wb_genericmemory_copy_ptr(const jl_value_t *owner, jl_genericmemory_t *src, char* src_p,
