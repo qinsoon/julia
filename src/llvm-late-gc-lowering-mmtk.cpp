@@ -166,3 +166,88 @@ void LateLowerGCFrame::CleanupGCPreserve(Function &F, CallInst *CI, Value *calle
         builder.CreateCall(getOrDeclare(jl_well_known::GCPreserveEndHook), {});
     }
 }
+
+void LateLowerGCFrame::CleanupWriteBarriers(Function &F, State *S, const SmallVector<CallInst*, 0> &WriteBarriers, bool *CFGModified) {
+    auto T_size = F.getParent()->getDataLayout().getIntPtrType(F.getContext());
+    for (auto CI : WriteBarriers) {
+        auto parent = CI->getArgOperand(0);
+        if (std::all_of(CI->op_begin() + 1, CI->op_end(),
+                    [parent, &S](Value *child) { return parent == child || IsPermRooted(child, S); })) {
+            CI->eraseFromParent();
+            continue;
+        }
+        if (CFGModified) {
+            *CFGModified = true;
+        }
+
+        IRBuilder<> builder(CI);
+
+        const bool INLINE_WRITE_BARRIER = true;
+        if (INLINE_WRITE_BARRIER) {
+            if (MMTK_NEEDS_WRITE_BARRIER == MMTK_OBJECT_BARRIER) {
+                auto i8_ty = Type::getInt8Ty(F.getContext());
+                auto intptr_ty = T_size;
+
+                // intptr_t addr = (intptr_t) (void*) src;
+                // uint8_t* meta_addr = (uint8_t*) (SIDE_METADATA_BASE_ADDRESS + (addr >> 6));
+                intptr_t metadata_base_address = reinterpret_cast<intptr_t>(MMTK_SIDE_LOG_BIT_BASE_ADDRESS);
+                auto metadata_base_val = ConstantInt::get(intptr_ty, metadata_base_address);
+                auto metadata_base_ptr = ConstantExpr::getIntToPtr(metadata_base_val, PointerType::get(i8_ty, 0));
+
+                auto parent_val = builder.CreatePtrToInt(parent, intptr_ty);
+                auto shr = builder.CreateLShr(parent_val, ConstantInt::get(intptr_ty, 6));
+                auto metadata_ptr = builder.CreateGEP(i8_ty, metadata_base_ptr, shr);
+
+                // intptr_t shift = (addr >> 3) & 0b111;
+                auto shift = builder.CreateAnd(builder.CreateLShr(parent_val, ConstantInt::get(intptr_ty, 3)), ConstantInt::get(intptr_ty, 7));
+                auto shift_i8 = builder.CreateTruncOrBitCast(shift, i8_ty);
+
+                // uint8_t byte_val = *meta_addr;
+                auto load_i8 = builder.CreateAlignedLoad(i8_ty, metadata_ptr, Align());
+
+                // if (((byte_val >> shift) & 1) == 1) {
+                auto shifted_load_i8 = builder.CreateLShr(load_i8, shift_i8);
+                auto masked = builder.CreateAnd(shifted_load_i8, ConstantInt::get(i8_ty, 1));
+                auto is_unlogged = builder.CreateICmpEQ(masked, ConstantInt::get(i8_ty, 1));
+
+                // object_reference_write_slow_call((void*) src, (void*) slot, (void*) target);
+                MDBuilder MDB(F.getContext());
+                SmallVector<uint32_t, 2> Weights{1, 9};
+                auto mayTriggerSlowpath = SplitBlockAndInsertIfThen(is_unlogged, CI, false, MDB.createBranchWeights(Weights));
+                builder.SetInsertPoint(mayTriggerSlowpath);
+
+                // for binding write barrier, we also set gc bits to 2 (see mmtk_gc_wb_binding)
+                // if (CI->getCalledOperand() == write_barrier_binding_func) {
+                //     auto tag = EmitLoadTag(builder, parent);
+                //     auto cleared_bits = builder.CreateAnd(tag, ConstantInt::get(T_size, ~0x3));
+                //     auto new_tag = builder.CreateOr(cleared_bits, ConstantInt::get(T_size, 2));
+                //     auto store = builder.CreateAlignedStore(new_tag, EmitTagPtr(builder, T_size, parent), Align(sizeof(size_t)));
+                //     store->setOrdering(AtomicOrdering::Unordered);
+                //     store->setMetadata(LLVMContext::MD_tbaa, tbaa_tag);
+                // }
+
+                // We just need the src object (parent)
+                builder.CreateCall(getOrDeclare(jl_intrinsics::queueGCRoot), { parent });
+            }  else {
+                if (MMTK_NEEDS_WRITE_BARRIER != 0) {
+                    jl_printf(JL_STDERR, "ERROR: only object barrier fastpath is implemented");
+                    assert(false);
+                }
+            }
+        } else {
+            // Do not inlie write barrier -- just call into each function.
+            jl_printf(JL_STDERR, "ERROR: non-inlined WB is not implemented");
+            assert(false);
+
+            // For object remembering barrier, we just need the src object (parent)
+            // if (CI->getCalledOperand() == write_barrier_func) {
+            //     Function *wb_func = getOrDeclare(jl_intrinsics::queueGCRoot);
+            //     builder.CreateCall(wb_func, { parent });
+            // } else {
+            //     assert(false);
+            // }
+        }
+
+        CI->eraseFromParent();
+    }
+}
