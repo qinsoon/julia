@@ -2999,6 +2999,7 @@ void jl_init_types(void) JL_GC_DISABLED
     jl_datatype_type->name->constfields = datatype_constfields;
     jl_datatype_type->name->atomicfields = datatype_atomicfields;
     jl_precompute_memoized_dt(jl_datatype_type, 1);
+    jl_gc_wb_fresh(jl_datatype_type, NULL);
 
     jl_typename_type->name = jl_new_typename_in(jl_symbol("TypeName"), core, 0, 1);
     jl_typename_type->name->wrapper = (jl_value_t*)jl_typename_type;
@@ -3030,6 +3031,7 @@ void jl_init_types(void) JL_GC_DISABLED
                                       jl_any_type /*jl_uint8_type*/,
                                       jl_any_type /*jl_uint8_type*/,
                                       jl_any_type/*jl_voidpointer_type*/);
+    jl_gc_wb_fresh(jl_typename_type, NULL);
 
     jl_methcache_type->name = jl_new_typename_in(jl_symbol("MethodCache"), core, 0, 1);
     jl_methcache_type->name->wrapper = (jl_value_t*)jl_methcache_type;
@@ -3041,6 +3043,7 @@ void jl_init_types(void) JL_GC_DISABLED
     jl_methcache_type->name->atomicfields = methcache_atomicfields;
     jl_precompute_memoized_dt(jl_methcache_type, 1);
     jl_methcache_type->types = jl_svec(4, jl_any_type, jl_any_type, jl_any_type/*voidpointer*/, jl_any_type/*int32*/);
+    jl_gc_wb_fresh(jl_methcache_type, NULL);
 
     jl_methtable_type->name = jl_new_typename_in(jl_symbol("MethodTable"), core, 0, 1);
     jl_methtable_type->name->wrapper = (jl_value_t*)jl_methtable_type;
@@ -3054,6 +3057,7 @@ void jl_init_types(void) JL_GC_DISABLED
     jl_methtable_type->name->atomicfields = methtable_atomicfields;
     jl_precompute_memoized_dt(jl_methtable_type, 1);
     jl_methtable_type->types = jl_svec(5, jl_any_type, jl_methcache_type, jl_symbol_type, jl_any_type /*jl_module_type*/, jl_any_type);
+    jl_gc_wb_fresh(jl_methtable_type, NULL);
 
     jl_symbol_type->name = jl_new_typename_in(jl_symbol("Symbol"), core, 0, 1);
     jl_symbol_type->name->wrapper = (jl_value_t*)jl_symbol_type;
@@ -3063,6 +3067,7 @@ void jl_init_types(void) JL_GC_DISABLED
     jl_symbol_type->name->names = jl_emptysvec;
     jl_symbol_type->types = jl_emptysvec;
     jl_precompute_memoized_dt(jl_symbol_type, 1);
+    jl_gc_wb_fresh(jl_symbol_type, NULL);
 
     jl_simplevector_type->name = jl_new_typename_in(jl_symbol("SimpleVector"), core, 0, 1);
     jl_simplevector_type->name->wrapper = (jl_value_t*)jl_simplevector_type;
@@ -3072,6 +3077,7 @@ void jl_init_types(void) JL_GC_DISABLED
     jl_simplevector_type->name->names = jl_emptysvec;
     jl_simplevector_type->types = jl_emptysvec;
     jl_precompute_memoized_dt(jl_simplevector_type, 1);
+    jl_gc_wb_fresh(jl_simplevector_type, NULL);
 
     // now they can be used to create the remaining base kinds and types
     jl_nothing_type = jl_new_datatype(jl_symbol("Nothing"), core, jl_any_type, jl_emptysvec,
@@ -3079,6 +3085,7 @@ void jl_init_types(void) JL_GC_DISABLED
     jl_void_type = jl_nothing_type; // deprecated alias
     jl_astaggedvalue(jl_nothing)->header = ((uintptr_t)jl_nothing_type) | GC_OLD_MARKED;
     jl_nothing_type->instance = jl_nothing;
+    jl_gc_wb_fresh(jl_nothing_type, NULL);
 
     jl_tvar_type = jl_new_datatype(jl_symbol("TypeVar"), core, jl_any_type, jl_emptysvec,
                                    jl_perm_symsvec(3, "name", "lb", "ub"),
@@ -3094,6 +3101,7 @@ void jl_init_types(void) JL_GC_DISABLED
     jl_bottom_type = jl_gc_permobj(0, jl_typeofbottom_type, 0);
     jl_set_typetagof(jl_bottom_type, jl_typeofbottom_tag, GC_OLD_MARKED);
     jl_typeofbottom_type->instance = jl_bottom_type;
+    jl_gc_wb_fresh(jl_typeofbottom_type, NULL);
 
     jl_unionall_type = jl_new_datatype(jl_symbol("UnionAll"), core, type_type, jl_emptysvec,
                                        jl_perm_symsvec(2, "var", "body"),
@@ -3116,7 +3124,10 @@ void jl_init_types(void) JL_GC_DISABLED
     jl_precompute_memoized_dt(type_type, 0); // update the hash value ASAP
     type_type->hasfreetypevars = 1;
     type_type->ismutationfree = 1;
+    jl_gc_wb_fresh(type_type, NULL);
+
     jl_type_typename->wrapper = jl_new_struct(jl_unionall_type, tttvar, (jl_value_t*)jl_type_type);
+    jl_gc_wb_fresh(jl_type_typename, jl_type_typename->wrapper);
     jl_type_type = (jl_unionall_t*)jl_type_typename->wrapper;
 
     jl_vararg_type = jl_new_datatype(jl_symbol("TypeofVararg"), core, jl_any_type, jl_emptysvec,
@@ -3131,9 +3142,11 @@ void jl_init_types(void) JL_GC_DISABLED
     jl_svec_t *anytuple_params = jl_svec(1, jl_wrap_vararg((jl_value_t*)jl_any_type, (jl_value_t*)NULL, 0, 0));
     jl_anytuple_type = jl_new_datatype(jl_symbol("Tuple"), core, jl_any_type, anytuple_params,
                                        jl_emptysvec, anytuple_params, jl_emptysvec, 0, 0, 0);
+    jl_gc_wb_fresh(jl_anytuple_type, NULL);
     jl_tuple_typename = jl_anytuple_type->name;
     // fix some miscomputed values, since we didn't know this was going to be a Tuple in jl_precompute_memoized_dt
     jl_tuple_typename->wrapper = (jl_value_t*)jl_anytuple_type; // remove UnionAll wrappers
+    jl_gc_wb_fresh(jl_tuple_typename, jl_anytuple_type);
     jl_anytuple_type->isconcretetype = 0;
     jl_anytuple_type->maybe_subtype_of_cache = 0;
     jl_anytuple_type->layout = NULL;

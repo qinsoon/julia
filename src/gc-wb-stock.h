@@ -95,6 +95,11 @@ STATIC_INLINE void jl_gc_wb_genericmemory_copy_ptr(const jl_value_t *owner, jl_g
     }
 }
 
+STATIC_INLINE void jl_gc_wb_fresh(const void *parent JL_UNUSED, const void *ptr JL_UNUSED) JL_NOTSAFEPOINT
+{
+
+}
+
 #ifdef __cplusplus
 }
 #endif
