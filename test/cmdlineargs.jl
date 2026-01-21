@@ -1365,7 +1365,9 @@ end
 @test readchomp(`$(Base.julia_cmd()) -e 'module Hello; export main; (@main)(args) = println("hello"); end; import .Hello'`) == ""
 
 # test --bug-report=rr
-if Sys.islinux() && Sys.ARCH in (:i686, :x86_64) # rr is only available on these platforms
+if Sys.islinux() &&
+    Sys.ARCH in (:i686, :x86_64) && # rr is only available on these platforms
+    get(ENV, "JL_TEST_NO_RR_AVAILABLE", "0") != "1" # if this is set, skip rr tests
     mktempdir() do temp_trace_dir
         test_read_success(setenv(`$(Base.julia_cmd()) --bug-report=rr-local -e 'exit()'`,
                                  "JULIA_RR_RECORD_ARGS" => "-n --nested=ignore",
