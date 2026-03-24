@@ -1108,6 +1108,10 @@ void sweep_stack_pool_loop(void) JL_NOTSAFEPOINT
                     t->ctx.stkbuf = NULL;
                     _jl_free_stack(ptls2, stkbuf, bufsz);
                 }
+                if (t->excstack && !jl_excstack_is_gc_managed(t->excstack)) {
+                    free(t->excstack);
+                    t->excstack = NULL;
+                }
 #ifdef _COMPILER_TSAN_ENABLED_
                 if (t->ctx.tsan_state) {
                     __tsan_destroy_fiber(t->ctx.tsan_state);
@@ -2357,9 +2361,11 @@ FORCE_INLINE void gc_mark_outrefs(jl_ptls_t ptls, jl_gc_markqueue_t *mq, void *_
                     jl_excstack_t *excstack = ta->excstack;
                     gc_heap_snapshot_record_task_to_frame_edge(ta, excstack);
                     size_t itr = ta->excstack->top;
-                    gc_setmark_buf_(ptls, excstack, bits,
-                                    sizeof(jl_excstack_t) +
-                                        sizeof(uintptr_t) * excstack->reserved_size);
+                    if (jl_excstack_is_gc_managed(excstack)) {
+                        gc_setmark_buf_(ptls, excstack, bits,
+                                        sizeof(jl_excstack_t) +
+                                            sizeof(uintptr_t) * excstack->reserved_size);
+                    }
                     gc_mark_excstack(ptls, excstack, itr);
                 }
                 const jl_datatype_layout_t *layout = jl_task_type->layout;

@@ -385,26 +385,38 @@ static void jl_copy_excstack(jl_excstack_t *dest, jl_excstack_t *src) JL_NOTSAFE
 }
 
 static void jl_reserve_excstack(jl_task_t *ct, jl_excstack_t **stack JL_REQUIRE_ROOTED_SLOT,
-                                size_t reserved_size)
+                                size_t reserved_size, int force_no_gc)
 {
     jl_excstack_t *s = *stack;
     if (s && s->reserved_size >= reserved_size)
         return;
     size_t bufsz = sizeof(jl_excstack_t) + sizeof(uintptr_t)*reserved_size;
-    jl_excstack_t *new_s = (jl_excstack_t*)jl_gc_alloc_buf(ct->ptls, bufsz);
+    jl_excstack_t *new_s;
+    if (force_no_gc) {
+        new_s = (jl_excstack_t*)malloc_s(bufsz);
+        new_s->flags = 0;
+    }
+    else {
+        new_s = (jl_excstack_t*)jl_gc_alloc_buf(ct->ptls, bufsz);
+        new_s->flags = JL_EXCSTACK_GC_MANAGED;
+    }
     new_s->top = 0;
     new_s->reserved_size = reserved_size;
     if (s)
         jl_copy_excstack(new_s, s);
+    if (s && !jl_excstack_is_gc_managed(s))
+        free(s);
     *stack = new_s;
-    jl_gc_wb(ct, new_s);
+    if (jl_excstack_is_gc_managed(new_s))
+        jl_gc_wb(ct, new_s);
 }
 
 void jl_push_excstack(jl_task_t *ct, jl_excstack_t **stack JL_REQUIRE_ROOTED_SLOT JL_ROOTING_ARGUMENT,
                       jl_value_t *exception JL_ROOTED_ARGUMENT,
                       jl_bt_element_t *bt_data, size_t bt_size)
 {
-    jl_reserve_excstack(ct, stack, (*stack ? (*stack)->top : 0) + bt_size + 2);
+    int force_no_gc = exception == jl_memory_exception;
+    jl_reserve_excstack(ct, stack, (*stack ? (*stack)->top : 0) + bt_size + 2, force_no_gc);
     jl_excstack_t *s = *stack;
     jl_bt_element_t *rawstack = jl_excstack_raw(s);
     memcpy(rawstack + s->top, bt_data, sizeof(jl_bt_element_t)*bt_size);

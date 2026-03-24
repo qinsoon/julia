@@ -559,11 +559,8 @@ JL_DLLEXPORT void jl_gc_scan_julia_exc_obj(void* obj_raw, void* closure, Process
     jl_task_t *ta = (jl_task_t*)obj_raw;
 
     if (ta->excstack) { // inlining label `excstack` from mark_loop
-
-        // the excstack should always be a heap object
-        assert(mmtk_object_is_managed_by_mmtk(ta->excstack));
-
-        process_slot(closure, &ta->excstack);
+        if (jl_excstack_is_gc_managed(ta->excstack))
+            process_slot(closure, &ta->excstack);
         jl_excstack_t *excstack = ta->excstack;
         size_t itr = ta->excstack->top;
         size_t bt_index = 0;
@@ -739,6 +736,10 @@ JL_DLLEXPORT void jl_gc_mmtk_sweep_stack_pools(void)
                 if (stkbuf) {
                     t->ctx.stkbuf = NULL;
                     _jl_free_stack(ptls2, stkbuf, bufsz);
+                }
+                if (t->excstack && !jl_excstack_is_gc_managed(t->excstack)) {
+                    free(t->excstack);
+                    t->excstack = NULL;
                 }
 #ifdef _COMPILER_TSAN_ENABLED_
                 if (t->ctx.tsan_state) {

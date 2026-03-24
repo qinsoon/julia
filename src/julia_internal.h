@@ -1666,11 +1666,19 @@ JL_DLLEXPORT size_t jl_capture_interp_frame(jl_bt_element_t *bt_data,
 struct _jl_excstack_t { // typedef in julia.h
     size_t top;
     size_t reserved_size;
+    uintptr_t flags;
     // Pack all stack entries into a growable buffer to amortize allocation
     // across repeated exception handling.
     // Layout: [bt_data1... bt_size1 exc1  bt_data2... bt_size2 exc2  ..]
     // jl_bt_element_t data[]; // Access with jl_excstack_raw
 };
+
+#define JL_EXCSTACK_GC_MANAGED 0x1
+
+STATIC_INLINE int jl_excstack_is_gc_managed(jl_excstack_t *stack) JL_NOTSAFEPOINT
+{
+    return (stack->flags & JL_EXCSTACK_GC_MANAGED) != 0;
+}
 
 STATIC_INLINE jl_bt_element_t *jl_excstack_raw(jl_excstack_t *stack) JL_NOTSAFEPOINT
 {
