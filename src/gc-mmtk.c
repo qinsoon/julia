@@ -86,9 +86,12 @@ void jl_gc_init(void) {
             hint = parse_heap_size_option(cp, "JULIA_HEAP_SIZE_HINT=\"<size>[<unit>]\"", 1);
     }
 #ifdef _P64
+    size_t total_mem = uv_get_total_memory();
     if (hint == 0) {
+        hint = total_mem;
+
         uint64_t constrained_mem = uv_get_constrained_memory();
-        if (constrained_mem > 0 && constrained_mem < uv_get_total_memory())
+        if (constrained_mem > 0 && constrained_mem < total_mem)
             hint = constrained_mem;
     }
 #endif
