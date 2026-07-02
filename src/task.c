@@ -1101,6 +1101,7 @@ JL_DLLEXPORT jl_task_t *jl_new_task(jl_value_t *start, jl_value_t *completion_fu
     jl_task_t *ct = jl_current_task;
     jl_task_t *t = (jl_task_t*)jl_gc_alloc(ct->ptls, sizeof(jl_task_t), jl_task_type);
     jl_set_typetagof(t, jl_task_tag, 0);
+    jl_gc_record_allocated_task(ct->ptls, t);
     JL_PROBE_RT_NEW_TASK(ct, t);
     t->ctx.copy_stack = 0;
     if (ssize == 0) {
@@ -1549,6 +1550,7 @@ jl_task_t *jl_init_root_task(jl_ptls_t ptls, void *stack_lo, void *stack_hi)
     jl_set_pgcstack(&bootstrap_task.value.gcstack);
     bootstrap_task.value.ptls = ptls;
     jl_task_t *ct = (jl_task_t*)jl_gc_alloc(ptls, sizeof(jl_task_t), jl_task_type);
+    jl_gc_record_allocated_task(ptls, ct);
     jl_set_typetagof(ct, jl_task_tag, 0);
     memset(ct, 0, sizeof(jl_task_t));
     void *stack = stack_lo;

@@ -1089,6 +1089,32 @@ void sweep_stack_pool_loop(void) JL_NOTSAFEPOINT
             small_arraylist_free(ptls2->gc_tls_common.heap.free_stacks);
         }
 
+        {
+            small_arraylist_t *all_tasks = jl_gc_get_all_tasks_list(ptls2);
+            size_t n = 0;
+            size_t ndel = 0;
+            size_t l = mtarraylist_length(all_tasks);
+            void **lst = all_tasks->items;
+            if (l != 0) {
+                while (1) {
+                    jl_task_t *t = (jl_task_t*)lst[n];
+                    assert(jl_is_task(t));
+                    if (gc_marked(jl_astaggedvalue(t)->bits.gc)) {
+                        n++;
+                    }
+                    else {
+                        ndel++;
+                    }
+                    if (n >= l - ndel)
+                        break;
+                    void *tmp = lst[n];
+                    lst[n] = lst[n + ndel];
+                    lst[n + ndel] = tmp;
+                }
+                all_tasks->len -= ndel;
+            }
+        }
+
         small_arraylist_t *live_tasks = &ptls2->gc_tls_common.heap.live_tasks;
         size_t n = 0;
         size_t ndel = 0;

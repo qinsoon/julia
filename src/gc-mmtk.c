@@ -724,6 +724,32 @@ JL_DLLEXPORT void jl_gc_mmtk_sweep_stack_pools(void)
             small_arraylist_free(ptls2->gc_tls_common.heap.free_stacks);
         }
 
+        {
+            small_arraylist_t *all_tasks = jl_gc_get_all_tasks_list(ptls2);
+            size_t n = 0;
+            size_t ndel = 0;
+            size_t l = mtarraylist_length(all_tasks);
+            void **lst = all_tasks->items;
+            while (n < l - ndel) {
+                jl_task_t *t = (jl_task_t*)lst[n];
+                if (mmtk_is_live_object(t)) {
+                    jl_task_t *maybe_forwarded = (jl_task_t*)mmtk_get_possibly_forwarded(t);
+                    all_tasks->items[n] = maybe_forwarded;
+                    assert(jl_is_task(maybe_forwarded));
+                    n++;
+                }
+                else {
+                    ndel++;
+                }
+                if (n >= l - ndel)
+                    break;
+                void *tmp = lst[n];
+                lst[n] = lst[n + ndel];
+                lst[n + ndel] = tmp;
+            }
+            all_tasks->len -= ndel;
+        }
+
         small_arraylist_t *live_tasks = &ptls2->gc_tls_common.heap.live_tasks;
         size_t n = 0;
         size_t ndel = 0;

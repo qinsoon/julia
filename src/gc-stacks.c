@@ -22,6 +22,54 @@
 
 const size_t jl_guard_size = (4096 * 8);
 static _Atomic(uint32_t) num_stack_mappings = 0;
+static _Atomic(small_arraylist_t*) jl_all_tasks_lists = NULL;
+static int jl_all_tasks_lists_size = 0;
+
+static void jl_gc_copy_all_tasks_list(small_arraylist_t *dst, small_arraylist_t *src) JL_NOTSAFEPOINT
+{
+    *dst = *src;
+    if (src->items == &src->_space[0]) {
+        memcpy(dst->_space, src->_space, sizeof(src->_space));
+        dst->items = &dst->_space[0];
+    }
+}
+
+void jl_gc_init_all_tasks_list(jl_ptls_t ptls) JL_NOTSAFEPOINT
+{
+    int16_t tid = ptls->tid;
+    small_arraylist_t *lists = jl_atomic_load_relaxed(&jl_all_tasks_lists);
+    if (jl_all_tasks_lists_size <= tid) {
+        int i;
+        int newsize = jl_all_tasks_lists_size + tid + 2;
+        small_arraylist_t *newlists = (small_arraylist_t*)calloc_s(newsize * sizeof(small_arraylist_t));
+        for (i = 0; i < jl_all_tasks_lists_size; i++) {
+            jl_gc_copy_all_tasks_list(&newlists[i], &lists[i]);
+        }
+        jl_atomic_store_release(&jl_all_tasks_lists, newlists);
+        if (lists != NULL) {
+            jl_gc_add_quiescent(ptls, (void**)lists, free);
+        }
+        jl_all_tasks_lists_size = newsize;
+        lists = newlists;
+    }
+    if (lists[tid].items == NULL) {
+        small_arraylist_new(&lists[tid], 0);
+    }
+}
+
+JL_DLLEXPORT small_arraylist_t *jl_gc_get_all_tasks_list(jl_ptls_t ptls) JL_NOTSAFEPOINT
+{
+    small_arraylist_t *lists = jl_atomic_load_relaxed(&jl_all_tasks_lists);
+    assert(lists != NULL);
+    assert(0 <= ptls->tid && ptls->tid < jl_all_tasks_lists_size);
+    return &lists[ptls->tid];
+}
+
+void jl_gc_record_allocated_task(jl_ptls_t ptls, jl_task_t *task) JL_NOTSAFEPOINT
+{
+    assert(task != NULL);
+    mtarraylist_push(jl_gc_get_all_tasks_list(ptls), task);
+}
 
 #ifdef _OS_WINDOWS_
 #define MAP_FAILED NULL

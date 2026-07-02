@@ -388,6 +388,7 @@ jl_ptls_t jl_init_threadtls(int16_t tid)
     allstates[tid] = ptls;
     if (jl_atomic_load_relaxed(&jl_n_threads) < tid + 1)
         jl_atomic_store_release(&jl_n_threads, tid + 1);
+    jl_gc_init_all_tasks_list(ptls);
     jl_fence();
     uv_mutex_unlock(&tls_lock);
 

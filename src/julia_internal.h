@@ -253,6 +253,9 @@ JL_DLLEXPORT int jl_lock_profile_wr(void) JL_NOTSAFEPOINT JL_NOTSAFEPOINT_ENTER;
 JL_DLLEXPORT void jl_unlock_profile_wr(void) JL_NOTSAFEPOINT JL_NOTSAFEPOINT_LEAVE;
 
 arraylist_t *jl_get_all_tasks_arraylist(void) JL_NOTSAFEPOINT;
+void jl_gc_init_all_tasks_list(jl_ptls_t ptls) JL_NOTSAFEPOINT;
+JL_DLLEXPORT small_arraylist_t *jl_gc_get_all_tasks_list(jl_ptls_t ptls) JL_NOTSAFEPOINT;
+void jl_gc_record_allocated_task(jl_ptls_t ptls, jl_task_t *task) JL_NOTSAFEPOINT;
 typedef struct {
     size_t bt_size;
     int tid;
