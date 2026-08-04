@@ -63,6 +63,26 @@ impl Scanning<JuliaVM> for VMScanning {
         use crate::julia_types::*;
         use mmtk::util::Address;
 
+        // Forwards each visited slot to two visitors in a single walk, so a scan that needs
+        // to feed two different destinations (the shared per-pause root buffer and a
+        // per-task snapshot buffer, see `root_scan_task` below) doesn't need to walk the same
+        // gc stack twice.
+        #[cfg(feature = "concurrentimmix")]
+        struct DualSlotVisitor<'a, 'b, A: SlotVisitor<JuliaVMSlot>, B: SlotVisitor<JuliaVMSlot>> {
+            a: &'a mut A,
+            b: &'b mut B,
+        }
+
+        #[cfg(feature = "concurrentimmix")]
+        impl<'a, 'b, A: SlotVisitor<JuliaVMSlot>, B: SlotVisitor<JuliaVMSlot>> SlotVisitor<JuliaVMSlot>
+            for DualSlotVisitor<'a, 'b, A, B>
+        {
+            fn visit_slot(&mut self, slot: JuliaVMSlot) {
+                self.a.visit_slot(slot);
+                self.b.visit_slot(slot);
+            }
+        }
+
         let ptls: &mut _jl_tls_states_t = unsafe { std::mem::transmute(mutator.mutator_tls) };
         let mut slot_buffer = StackRootBuffer { buffer: vec![] }; // need to be tpinned as they're all from the shadow stack
         let mut node_buffer = vec![];
@@ -70,9 +90,30 @@ impl Scanning<JuliaVM> for VMScanning {
         // Scan thread local from ptls: See gc_queue_thread_local in gc.c
         let mut root_scan_task = |task: *const _jl_task_t, task_is_root: bool| {
             if !task.is_null() {
+                #[cfg(feature = "concurrentimmix")]
+                {
+                    // Record a snapshot for tasks scanned directly in this STW pause, in the
+                    // same walk that feeds the shared `slot_buffer` used for this pause's roots
+                    // work. A task that keeps running across the pause (e.g. ptls.current_task)
+                    // never goes through the resume barrier (no `ctx_switch` happens for it), so
+                    // without this, a later concurrent scan would find no snapshot for it and
+                    // trip the "not bound to a mutator" assert in `gc_thread_scan_stack`, even
+                    // though the task was already scanned here.
+                    let mut task_buffer = StackRootBuffer { buffer: vec![] };
+                    unsafe {
+                        let mut dual = DualSlotVisitor {
+                            a: &mut slot_buffer,
+                            b: &mut task_buffer,
+                        };
+                        crate::julia_scanning::mmtk_scan_gcstack(task, &mut dual);
+                    }
+                    GC_STACK_SNAPSHOTS.mark_pause_scanned(task, task_buffer.buffer);
+                }
+                #[cfg(not(feature = "concurrentimmix"))]
                 unsafe {
                     crate::julia_scanning::mmtk_scan_gcstack(task, &mut slot_buffer);
                 }
+
                 if task_is_root {
                     // captures wrong root nodes before creating the work
                     debug_assert!(
@@ -297,12 +338,28 @@ impl GCStackSnapshots {
             .map(|snapshot| snapshot.clone())
     }
 
+    /// Record a snapshot captured directly during the STW root scan, for tasks that won't
+    /// otherwise get one through `resume_barrier_scan_task` (see the call site in
+    /// `scan_roots_in_mutator_thread`).
+    pub fn mark_pause_scanned(&self, task: *const _jl_task_t, roots: Vec<ObjectReference>) {
+        assert!(!task.is_null());
+
+        self.snapshots
+            .insert(task as usize, Arc::from(roots.into_boxed_slice()));
+    }
+
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
     pub fn gc_thread_scan_stack(&self, task: *const _jl_task_t) -> Option<Arc<[ObjectReference]>> {
         assert!(!task.is_null());
 
         if let Some(snapshot) = self.get_snapshot(task) {
             return Some(snapshot);
         }
+
+        assert!(
+            unsafe { (*task).ptls.is_null() },
+            "Capturing the stack of a task bound to a mutator thread. This means the task might be running, and we try to snapshot its stack."
+        );
 
         let task_key = task as usize;
         let task_lock = self.get_task_scan_lock(task_key);
